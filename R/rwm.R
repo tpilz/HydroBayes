@@ -34,7 +34,7 @@ rwm <- function(prior, pdf, t, d) {
   # evolution of chain
   for (i in 2:t) {
     # candidate point: previous point + sample from d-variate normal proposal distribution with zero means and covariance matrix C
-    xp <- x[i-1, 1:d] + mvrnorm(n=d, mu=rep(0,d), Sigma = C)
+    xp <- x[i-1, 1:d] + mvrnorm(mu=rep(0,d), Sigma = C)
     # density of candidate point
     p_xp <- pdf(xp)
     # probability of acceptance (Metropolis acceptance ratio)
