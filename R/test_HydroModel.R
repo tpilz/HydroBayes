@@ -12,6 +12,7 @@
 #' during the Hydrocourse held in Luxembourg, Spring 2016.
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
+#' @export
 
 HydroModel <- function(forcing,param){
   if(param < 0)
