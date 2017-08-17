@@ -7,16 +7,18 @@
 rwm(prior, pdf, t, d)
 }
 \arguments{
-\item{prior}{A function that draws N samples from a d-variate prior distribution.}
+\item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
+Returns an N-by-d matrix.}
 
-\item{pdf}{A function that calculates the density of the target distribution for given parameters.}
+\item{pdf}{A function(prior) that calculates the density of the target distribution for given prior.
+Returns an N-variate vector.}
 
 \item{t}{\code{numeric}. Number of samples from the Markov chain.}
 
 \item{d}{\code{numeric}. Number of parameters.}
 }
 \value{
-\code{list} with named elements 'chain': a t x d matrix of parameter realisations for each iteration
+\code{list} with named elements 'chain': a t-by-d matrix of parameter realisations for each iteration
 of the Markov chain; and 'density': a t-variate vector of densities computed by \code{pdf} at each iteration
 of the Markov chain.
 }

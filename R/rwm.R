@@ -1,10 +1,12 @@
 #' Random Walk Metropolis algorithm
-#' @param prior A function that draws N samples from a d-variate prior distribution.
-#' @param pdf A function that calculates the density of the target distribution for given parameters.
+#' @param prior A function(N,d) that draws N samples from a d-variate prior distribution.
+#' Returns an N-by-d matrix.
+#' @param pdf A function(prior) that calculates the density of the target distribution for given prior.
+#' Returns an N-variate vector.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
 #'
-#' @return \code{list} with named elements 'chain': a t x d matrix of parameter realisations for each iteration
+#' @return \code{list} with named elements 'chain': a t-by-d matrix of parameter realisations for each iteration
 #' of the Markov chain; and 'density': a t-variate vector of densities computed by \code{pdf} at each iteration
 #' of the Markov chain.
 #'
@@ -20,8 +22,11 @@
 #' @export
 rwm <- function(prior, pdf, t, d) {
 
+  # scaling factor of the covariance matrix
+  s_d <- 2.38^2 / d
+
   # Covariance matrix of proposal distribution (identity matrix)
-  C <- (2.38/sqrt(d))^2 * diag(d)
+  C <- s_d * diag(d)
 
   # allocate chain and density
   x <- matrix(NaN, nrow=t, ncol=d)
