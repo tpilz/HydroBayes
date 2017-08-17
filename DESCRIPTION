@@ -6,7 +6,7 @@ Authors@R: person("Tobias", "Pilz", email="tpilz@uni-potsdam.de", role=c("aut", 
 Description: Collection of functions to apply Bayesian statistics in hydrological applications.
 	For internal use only!
 Imports:
-	coda
+	MASS
 License: GPL-3
 Encoding: UTF-8
 LazyData: true

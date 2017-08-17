@@ -16,7 +16,7 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import coda
+#' @import MASS
 rwm <- function(prior, pdf, t, d) {
 
   # Covariance matrix of proposal distribution (identity matrix)
