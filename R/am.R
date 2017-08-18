@@ -41,7 +41,10 @@ am <- function(prior, pdf, t, d) {
 
     # adaptation of the covariance matrix of the proposal distribution
     if (i %% 10 == 0) { # at every 10th iteration
-      C <- s_d * (cov(x[1:(i-1), 1:d]) + 1e-4*diag(d)) # 1e-4 prevents C of becoming singular
+      if(d==1)
+        C <- s_d * (var(x[1:(i-1), 1:d]) + 1e-4*diag(d))
+      else
+        C <- s_d * (cov(x[1:(i-1), 1:d]) + 1e-4*diag(d)) # 1e-4 prevents C of becoming singular
     }
 
     # candidate point: previous point + sample from d-variate normal proposal distribution with zero means and covariance matrix C
