@@ -14,10 +14,22 @@
 #' (i.e. in this case the normal) distribution. Default: 1e-6.
 #' @param nCR \code{integer}. Length of vector with crossover probabilities for parameter subspace sampling (default: 3).
 #' @param p_g \code{numeric}. Probability for gamma, the jump rate, being equal to 1. Default: 0.2.
+#' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
+#' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #'
-#' @return \code{list} with named elements 'chain': a t-by-d-by-nc array of parameter realisations for each iteration
-#' and Markov chain; and 'density': a t-by-nc matrix of densities computed by \code{pdf} at each iteration for each
-#' Markov chain.
+#' @return \code{list} with named elements:
+#'
+#' \emph{chain}: a t-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+#'
+#' \emph{density}: a t-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+#'
+#' \emph{runtime}: time of function execution in seconds;
+#'
+#' \emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
+#'
+#' \emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value;
+#'
+#' \emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value;
 #'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
@@ -33,14 +45,17 @@
 #' @import MASS
 #' @export
 dream <- function(prior, pdf, nc, t, d,
-                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2) {
+                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2, beta0 = 1) {
+
+  # track processing time
+  timea <- Sys.time()
 
   # allocate chains and density
   x <- array(NaN, dim=c(t,d,nc))
   p_x <- array(NaN, dim=c(t,nc))
 
-  # Variables selection probability crossover
-  J <- n_id <- rep(0, nCR)
+  # Variables for crossover probability selection and acceptance monitoring
+  J <- n_id <- n_acc <- rep(0, nCR)
 
   # R-Matrix: index of chains for DE
   R <- array(NaN, dim=c(nc, nc-1))
@@ -54,6 +69,10 @@ dream <- function(prior, pdf, nc, t, d,
   # initialize chains by sampling from prior
   x[1,,] <- t(prior(nc,d))
   p_x[1,] <- pdf(t(x[1,,]))
+
+  # auxiliary variables
+  out_AR <- out_CR <- array(NaN, dim = c(t, nCR))
+  outl <- list(NULL)
 
 
   # evolution of nc chains
@@ -98,6 +117,8 @@ dream <- function(prior, pdf, nc, t, d,
 
       # compute jump (differential evolution) for parameter subset
       dx[j, A] <- rnorm(d_star, sd=c_star) + (1+lambda[j]) * g * apply(x[i-1,A,a, drop=F] - x[i-1,A,b, drop=F], 2, sum)
+      # adjust jumping distance if desired
+      dx[j, A] <- dx[j, A] * beta0
 
       # compute proposal
       xp <- x[i-1,,j] + dx[j,]
@@ -109,6 +130,7 @@ dream <- function(prior, pdf, nc, t, d,
       if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
         x[i,,j] <- xp # accept candidate parameters
         p_x[i,j] <- p_xp # accept density accordingly
+        n_acc[id] <- n_acc[id] + 1
       } else {
         # retain previous values
         x[i,,j] <- x[i-1,,j]
@@ -117,18 +139,22 @@ dream <- function(prior, pdf, nc, t, d,
         dx[j,] <- 0
       }
 
-      # update jump distance crossover id
+      # update jump distance for id
       J[id] <- J[id] + sum((dx[j,]/std_x)^2)
-      # how many times crossover id used?
+      # how many times crossover of id used?
       n_id[id] <- n_id[id] + 1
 
     } # end proposal
 
     # during burn-in period
     if (i <= (burnin*t) ) {
-      # update selection probability of crossover
-      pCR <- J/n_id
-      pCR <- pCR/sum(pCR)
+      # update selection probability of crossover by jump distance following Vrugt, 2016 instead of Vrugt et al., 2009 (different results?!)
+      # favours larger jumps over smaller ones to speed up convergence
+      if(any(J > 0)) {
+        pCR <- J/n_id
+        pCR[which(is.nan(pCR))] <- 1/nCR # if a specific n_id is zero, i.e. was not yet used
+        pCR <- pCR/sum(pCR)
+      }
     }
 
     # outlier detection and correction (DREAM-specific)
@@ -139,14 +165,31 @@ dream <- function(prior, pdf, nc, t, d,
     iqr <- diff(quartiles)
     # identify outlier chains
     outliers <- which(proxy < quartiles[1] - 2*iqr)
-    # outlier chains take state of one of the other chains (randomly sampled)
+    # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
     if(length(outliers) > 0) {
       new_states <- sample((1:nc)[-outliers], length(outliers), replace = FALSE)
       x[i,,outliers] <- x[i,,new_states]
       p_x[i,outliers] <- p_x[i,new_states]
-    }
+      outl[[i]] <- outliers # keep track of outliers
+    } else
+      outl[[i]] <- 0 # keep track of outliers
+
+    # keep track of AR and CR
+    out_AR[i,] <- n_acc/n_id
+    out_CR[i,] <- pCR
 
   } #  end chain processing
+
+  # track processing time
+  timeb <- Sys.time()
+
+  # prepare output
+  output <- list(chain = x,
+                 density = p_x,
+                 runtime = timeb - timea,
+                 outlier = outl,
+                 AR = out_AR,
+                 CR = out_CR)
 
   return(list(chain=x, density=p_x))
 } # EOF

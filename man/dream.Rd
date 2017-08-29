@@ -5,7 +5,7 @@
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
 dream(prior, pdf, nc, t, d, burnin = 0.1, delta = 3, c_val = 0.1,
-  c_star = 1e-06, nCR = 3, p_g = 0.2)
+  c_star = 1e-06, nCR = 3, p_g = 0.2, beta0 = 1)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -33,11 +33,24 @@ Must be < 1! Default: 0.1.}
 \item{nCR}{\code{integer}. Length of vector with crossover probabilities for parameter subspace sampling (default: 3).}
 
 \item{p_g}{\code{numeric}. Probability for gamma, the jump rate, being equal to 1. Default: 0.2.}
+
+\item{beta0}{\code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
+\code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).}
 }
 \value{
-\code{list} with named elements 'chain': a t-by-d-by-nc array of parameter realisations for each iteration
-and Markov chain; and 'density': a t-by-nc matrix of densities computed by \code{pdf} at each iteration for each
-Markov chain.
+\code{list} with named elements:
+
+\emph{chain}: a t-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+
+\emph{density}: a t-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+
+\emph{runtime}: time of function execution in seconds;
+
+\emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
+
+\emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value;
+
+\emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value;
 }
 \description{
 Differential Evolution Adaptive Metropolis (DREAM) algorithm
