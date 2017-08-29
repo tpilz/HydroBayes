@@ -27,9 +27,14 @@
 #'
 #' \emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
 #'
-#' \emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value;
+#' \emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value
+#' (first element is NA due to computational reasons);
 #'
-#' \emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value;
+#' \emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value
+#' (first element is NA due to computational reasons);
+#'
+#' \emph{R_stat}: a t-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
+#' due to computational reasons).
 #'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
@@ -71,7 +76,8 @@ dream <- function(prior, pdf, nc, t, d,
   p_x[1,] <- pdf(t(x[1,,]))
 
   # auxiliary variables
-  out_AR <- out_CR <- array(NaN, dim = c(t, nCR))
+  out_AR <- out_CR <- array(NA, dim = c(t, nCR))
+  out_rstat <- array(NA, dim = c(t, d))
   outl <- list(NULL)
 
 
@@ -178,6 +184,10 @@ dream <- function(prior, pdf, nc, t, d,
     out_AR[i,] <- n_acc/n_id
     out_CR[i,] <- pCR
 
+    # calculate and keep track of convergence diagnostic
+    if(i > 2)
+      out_rstat[i,] <- R_stat(x[1:i,,, drop = F])
+
   } #  end chain processing
 
   # track processing time
@@ -189,7 +199,8 @@ dream <- function(prior, pdf, nc, t, d,
                  runtime = timeb - timea,
                  outlier = outl,
                  AR = out_AR,
-                 CR = out_CR)
+                 CR = out_CR,
+                 R_stat = out_rstat)
 
-  return(list(chain=x, density=p_x))
+  return(output)
 } # EOF
