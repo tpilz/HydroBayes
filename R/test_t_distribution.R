@@ -1,6 +1,6 @@
 #' Multivariate t-/Student distribution with 60 deg. of freedom
-#' @param x \code{matrix} of type \code{numeric}. Rows correspond to observations and columns
-#' to variables defining the dimensionality of the problem.
+#' @param x \code{numeric} vector with values of the parameters of the distribution or a or matrix
+#' with rows corresponding to observations and columns to parameters defining the dimensionality of the problem.
 #'
 #' @return A vector of type \code{numeric} and length equal to the number of rows of \code{x}.
 #'
@@ -16,6 +16,11 @@
 #'
 #' @export
 t_distribution <- function(x) {
+
+  # convert input to matrix if needed
+  if(!is.matrix(x))
+    x <- matrix(x, ncol=length(x))
+
   # dimensionality of target distribution
   d <- dim(x)[2]
 

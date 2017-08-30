@@ -7,8 +7,8 @@
 t_distribution(x)
 }
 \arguments{
-\item{x}{\code{matrix} of type \code{numeric}. Rows correspond to observations and columns
-to variables defining the dimensionality of the problem.}
+\item{x}{\code{numeric} vector with values of the parameters of the distribution or a or matrix
+with rows corresponding to observations and columns to parameters defining the dimensionality of the problem.}
 }
 \value{
 A vector of type \code{numeric} and length equal to the number of rows of \code{x}.
