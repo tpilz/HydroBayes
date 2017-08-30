@@ -16,24 +16,25 @@
 #' @param p_g \code{numeric}. Probability for gamma, the jump rate, being equal to 1. Default: 0.2.
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
+#' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
 #'
 #' @return \code{list} with named elements:
 #'
-#' \emph{chain}: a t-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+#' \emph{chain}: a t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
 #'
-#' \emph{density}: a t-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+#' \emph{density}: a t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
 #'
 #' \emph{runtime}: time of function execution in seconds;
 #'
 #' \emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
 #'
-#' \emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value
+#' \emph{AR}: a t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
 #' (first element is NA due to computational reasons);
 #'
-#' \emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value
+#' \emph{CR}: a t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 #' (first element is NA due to computational reasons);
 #'
-#' \emph{R_stat}: a t-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
+#' \emph{R_stat}: a t/thin-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
 #' due to computational reasons).
 #'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
@@ -50,7 +51,8 @@
 #' @import MASS
 #' @export
 dream <- function(prior, pdf, nc, t, d,
-                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2, beta0 = 1) {
+                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2,
+                  beta0 = 1, thin = 1) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -61,8 +63,8 @@ dream <- function(prior, pdf, nc, t, d,
   # track processing time
   timea <- Sys.time()
 
-  # allocate chains and density
-  x <- array(NaN, dim=c(t,d,nc))
+  # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
+  x <- array(NaN, dim=c(t/thin,d,nc))
   p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
@@ -78,12 +80,17 @@ dream <- function(prior, pdf, nc, t, d,
   pCR <- rep(1, nCR)/nCR
 
   # initialize chains by sampling from prior
-  x[1,,] <- t(prior(nc,d))
-  p_x[1,] <- pdf(t(x[1,,]))
+  xt <- prior(nc,d)
+  if(!is.matrix(xt))
+    matrix(xt, ncol=d)
+  p_x[1,] <- pdf(xt)
+
+  if(1 %% thin == 0)
+    x[i/thin,,] <- t(xt)
 
   # auxiliary variables
-  out_AR <- out_CR <- array(NA, dim = c(t, nCR))
-  out_rstat <- array(NA, dim = c(t, d))
+  out_AR <- out_CR <- array(NA, dim = c(t/thin, nCR))
+  out_rstat <- array(NA, dim = c(t/thin, d))
   outl <- list(NULL)
 
 
@@ -99,7 +106,7 @@ dream <- function(prior, pdf, nc, t, d,
     # draw lambda values
     lambda <- runif(nc, min = -c_val, max = c_val)
     # std for each dimension
-    std_x <- apply(x[i-1,,, drop=F], 1, sd)
+    std_x <- apply(xt, 2, sd)
 
     # proposal and accept/reject for each chain
     for (j in 1:nc) {
@@ -131,24 +138,23 @@ dream <- function(prior, pdf, nc, t, d,
       g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
 
       # compute jump (differential evolution) for parameter subset
-      dx[j, A] <- rnorm(d_star, sd=c_star) + (1+lambda[j]) * g * apply(x[i-1,A,a, drop=F] - x[i-1,A,b, drop=F], 2, sum)
+      dx[j, A] <- rnorm(d_star, sd=c_star) + (1+lambda[j]) * g * apply(xt[a,A, drop=F] - xt[b,A, drop=F], 2, sum)
       # adjust jumping distance if desired
       dx[j, A] <- dx[j, A] * beta0
 
       # compute proposal
-      xp <- x[i-1,,j] + dx[j,]
+      xp <- xt[j,] + dx[j,]
       # calculate density at proposal
       p_xp <- pdf(xp)
 
       # probability of acceptance (Metropolis acceptance ratio)
       p_acc <- min(1, p_xp/p_x[i-1,j])
       if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
-        x[i,,j] <- xp # accept candidate parameters
+        xt[j,] <- xp # accept candidate parameters
         p_x[i,j] <- p_xp # accept density accordingly
         n_acc[id] <- n_acc[id] + 1
       } else {
         # retain previous values
-        x[i,,j] <- x[i-1,,j]
         p_x[i,j] <- p_x[i-1,j]
         # set jump back to zero for pCR
         dx[j,] <- 0
@@ -160,6 +166,20 @@ dream <- function(prior, pdf, nc, t, d,
       n_id[id] <- n_id[id] + 1
 
     } # end proposal
+
+    # store for output
+    if(i %% thin == 0) {
+      # chain states
+      x[i/thin,,] <- t(xt)
+
+      # AR and CR
+      out_AR[i/thin,] <- n_acc/n_id
+      out_CR[i/thin,] <- pCR
+
+      # convergence diagnostic
+      if(i/thin > 2)
+        out_rstat[i/thin,] <- R_stat(x[1:(i/thin),,, drop = F])
+    }
 
     # during burn-in period
     if (i <= (burnin*t) ) {
@@ -183,19 +203,11 @@ dream <- function(prior, pdf, nc, t, d,
     # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
     if(length(outliers) > 0) {
       new_states <- sample((1:nc)[-outliers], length(outliers), replace = FALSE)
-      x[i,,outliers] <- x[i,,new_states]
+      xt[outliers,] <- xt[new_states,]
       p_x[i,outliers] <- p_x[i,new_states]
       outl[[i]] <- outliers # keep track of outliers
     } else
       outl[[i]] <- 0 # keep track of outliers
-
-    # keep track of AR and CR
-    out_AR[i,] <- n_acc/n_id
-    out_CR[i,] <- pCR
-
-    # calculate and keep track of convergence diagnostic
-    if(i > 2)
-      out_rstat[i,] <- R_stat(x[1:i,,, drop = F])
 
   } #  end chain processing
 
@@ -204,7 +216,7 @@ dream <- function(prior, pdf, nc, t, d,
 
   # prepare output
   output <- list(chain = x,
-                 density = p_x,
+                 density = p_x[seq(thin, t, by=thin),],
                  runtime = timeb - timea,
                  outlier = outl,
                  AR = out_AR,
