@@ -52,6 +52,12 @@
 dream <- function(prior, pdf, nc, t, d,
                   burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2, beta0 = 1) {
 
+  ### Argument checks ###
+  if(nc <= delta*2)
+    stop("Argument 'nc' must be > 'delta' * 2!")
+
+
+  ### Initialisations ###
   # track processing time
   timea <- Sys.time()
 
@@ -80,6 +86,9 @@ dream <- function(prior, pdf, nc, t, d,
   out_rstat <- array(NA, dim = c(t, d))
   outl <- list(NULL)
 
+
+
+  ### Algorithm ###
 
   # evolution of nc chains
   for(i in 2:t) {
