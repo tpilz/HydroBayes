@@ -2,7 +2,8 @@
 #' @param x \code{numeric} vector with values of the parameters of the distribution or a or matrix
 #' with rows corresponding to observations and columns to parameters defining the dimensionality of the problem.
 #'
-#' @return A vector of type \code{numeric} and length equal to the number of rows of \code{x}.
+#' @return A vector of type \code{numeric} and length equal to the number of rows of \code{x}
+#' containing the log of the t-/Student pdf at \code{x}.
 #'
 #' @references Based on Matlab code from Appendix C of:
 #'

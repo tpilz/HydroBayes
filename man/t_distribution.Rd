@@ -11,7 +11,8 @@ t_distribution(x)
 with rows corresponding to observations and columns to parameters defining the dimensionality of the problem.}
 }
 \value{
-A vector of type \code{numeric} and length equal to the number of rows of \code{x}.
+A vector of type \code{numeric} and length equal to the number of rows of \code{x}
+containing the log of the t-/Student pdf at \code{x}.
 }
 \description{
 Multivariate t-/Student distribution with 60 deg. of freedom
