@@ -5,7 +5,8 @@
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
 dream(prior, pdf, nc, t, d, burnin = 0.1, delta = 3, c_val = 0.1,
-  c_star = 1e-06, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1)
+  c_star = 1e-06, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
+  ncores = 1)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -38,6 +39,10 @@ Must be < 1! Default: 0.1.}
 \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).}
 
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
+
+\item{ncores}{\code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
+using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
+Default: 1.}
 }
 \value{
 \code{list} with named elements:

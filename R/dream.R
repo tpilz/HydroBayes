@@ -17,6 +17,9 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
+#' @param ncores \code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
+#' using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
+#' Default: 1.
 #'
 #' @return \code{list} with named elements:
 #'
@@ -40,7 +43,7 @@
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
 #'
-#' @references Code from 'Algorithm 5' of:
+#' @references Code from 'Algorithm 5' and 'Algorithm 6' of:
 #'
 #' Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 #' Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,
@@ -49,10 +52,11 @@
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
 #' @import MASS
+#' @import doMC
 #' @export
 dream <- function(prior, pdf, nc, t, d,
                   burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1) {
+                  beta0 = 1, thin = 1, ncores = 1) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -60,6 +64,9 @@ dream <- function(prior, pdf, nc, t, d,
 
 
   ### Initialisations ###
+  # register cores
+  registerDoMC(ncores)
+
   # track processing time
   timea <- Sys.time()
 
@@ -69,6 +76,9 @@ dream <- function(prior, pdf, nc, t, d,
 
   # Variables for crossover probability selection and acceptance monitoring
   J <- n_id <- n_acc <- rep(0, nCR)
+
+  # vector of sampled crossover indices
+  id <- rep(NA, nc)
 
   # R-Matrix: index of chains for DE
   R <- array(NaN, dim=c(nc, nc-1))
@@ -86,7 +96,9 @@ dream <- function(prior, pdf, nc, t, d,
   p_x[1,] <- pdf(xt)
 
   if(1 %% thin == 0)
-    x[i/thin,,] <- t(xt)
+    x[1/thin,,] <- t(xt)
+
+  xp <- array(NA, dim = c(nc, d))
 
   # auxiliary variables
   out_AR <- out_CR <- array(NA, dim = c(t/thin, nCR))
@@ -94,6 +106,36 @@ dream <- function(prior, pdf, nc, t, d,
   outl <- list(NULL)
 
 
+  ### helper functions ###
+  # function used for parallel calculation (pdf evaluation and acceptance/rejection of proposal)
+  stepfun <- function(prop, x_last, p_last, dx, std_x) {
+
+    # calculate density at proposal
+    p_prop <- pdf(prop)
+
+    # probability of acceptance (Metropolis acceptance ratio)
+    p_acc <- min(1, p_prop/p_last)
+    if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
+      out_prop <- prop # accept candidate parameters
+      out_p_prop <- p_prop # accept density accordingly
+      acc <- 1 # accpected
+    } else {
+      # retain previous values
+      out_prop <- x_last
+      out_p_prop <- p_last
+      dx <- 0 # set jump back to zero for pCR
+      acc <- 0 # rejected
+    }
+
+    # jump distance (euclidean distance of parameter moves)
+    dJ <- sum((dx/std_x)^2)
+
+    # output
+    return(list(xt = out_prop,
+                p_xt = out_p_prop,
+                dJ = dJ,
+                acc = acc))
+  } # EOF stepfun
 
   ### Algorithm ###
 
@@ -108,7 +150,7 @@ dream <- function(prior, pdf, nc, t, d,
     # std for each dimension
     std_x <- apply(xt, 2, sd)
 
-    # proposal and accept/reject for each chain
+    # generate proposals for each chain
     for (j in 1:nc) {
       # prepare parameter subspace sampling (DREAM-specific extensin of DE-MC)
       # select delta (equal selection probabilities)
@@ -119,11 +161,11 @@ dream <- function(prior, pdf, nc, t, d,
       if(any(a == b) || any(a == j) || any(b == j))
         stop("During chain selection something unexpected happened (some a equals some b or some a or b equals j)!")
       # index of crossover value
-      id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
+      id[j] <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
       # d values from U[0,1]
       z <- runif(d)
       # derive subset A of selected dimensions (parameters)
-      A <- which(z < CR[id])
+      A <- which(z < CR[id[j]])
       # how many dimensions/parameters sampled?
       d_star <- length(A)
       # A needs one value at least
@@ -143,29 +185,23 @@ dream <- function(prior, pdf, nc, t, d,
       dx[j, A] <- dx[j, A] * beta0
 
       # compute proposal
-      xp <- xt[j,] + dx[j,]
-      # calculate density at proposal
-      p_xp <- pdf(xp)
+      xp[j,] <- xt[j,] + dx[j,]
 
-      # probability of acceptance (Metropolis acceptance ratio)
-      p_acc <- min(1, p_xp/p_x[i-1,j])
-      if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
-        xt[j,] <- xp # accept candidate parameters
-        p_x[i,j] <- p_xp # accept density accordingly
-        n_acc[id] <- n_acc[id] + 1
-      } else {
-        # retain previous values
-        p_x[i,j] <- p_x[i-1,j]
-        # set jump back to zero for pCR
-        dx[j,] <- 0
-      }
+    } # end proposal generation
 
-      # update jump distance for id
-      J[id] <- J[id] + sum((dx[j,]/std_x)^2)
-      # how many times crossover of id used?
-      n_id[id] <- n_id[id] + 1
+    # parallel loop: function evaluation and proposal acceptance/rejection
+    test <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
 
-    } # end proposal
+    # distribute values calculated in parallel loop to variables
+    xt <- t(sapply(test, function(x) x$xt))
+    p_x[i,] <- sapply(test, function(x) x$p_xt)
+    dJ_t <- sapply(test, function(x) x$dJ)
+    acc_t <- sapply(test, function(x) x$acc)
+    for (h in 1:length(id)) {
+      J[id[h]] <- J[id[h]] + dJ_t[h]
+      n_id[id[h]] <- n_id[id[h]] + 1 # how many times crossover of id used?
+      n_acc[id[h]] <- n_acc[id[h]] + acc_t[h] # how many times a proposal was accpected?
+    }
 
     # store for output
     if(i %% thin == 0) {
