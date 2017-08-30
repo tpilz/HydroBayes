@@ -3,6 +3,7 @@
 
 library(MASS)
 library(mvtnorm)
+library(lhs)
 library(HydroBayes)
 
 setwd("/home/tobias/R/MyPackages/HydroBayes/examples")
@@ -86,7 +87,34 @@ lines(seq(-12, 15, 0.1), mixture(seq(-12, 15, 0.1)), lwd=2)
 savePlot("Fig5_test_mixture_distribution.png", type="png")
 
 
-sam_dream <- dream(prior = prior, pdf = pdf, nc=10, t=5000, d=1)
-hist(sam_dream$chain, probability = T, col="red", xlim = c(-12,15), ylim = c(0, 0.4), nclass = 50, main="DREAM", xlab="x")
+
+### Case studies from Sect. 5 ###
+
+## 5.1: 1-D mixture distribution
+set.seed(1312)
+prior <- function(N, d) {
+  lhs_sample <- randomLHS(N, d)
+  return(apply(lhs_sample, 2, qunif, min=-20, max=20))
+}
+pdf <- function(x) mixture(x)
+res <- dream(prior = prior, pdf = pdf, nc=10, t=5000, d=1)
+
+# Plot
+par(mfrow=c(2,2))
+hist(res$chain, probability = T, col="red", xlim = c(-12,15), ylim = c(0, 0.4), nclass = 50, main="DREAM", xlab="x")
 # plot target function
 lines(seq(-12, 15, 0.1), mixture(seq(-12, 15, 0.1)), lwd=2)
+# traceplot
+plot(1:dim(res$chain)[1], res$chain[,,1], type="n", ylab="x", xlab="Sample of Markov chain", ylim = c(-15,15))
+for (i in 1:dim(res$chain)[3])
+  points(1:dim(res$chain)[1], res$chain[,,i], pch=i, col=i)
+# AR
+plot(1:nrow(res$AR), apply(res$AR, 1, mean), type="l", ylab="Acceptance rate", xlab="Sample of Markov chain", ylim = c(0,1))
+for(i in 1:ncol(res$AR))
+  lines(1:nrow(res$AR), res$AR[,i], col=i+1)
+# pCR
+plot(1:nrow(res$CR), apply(res$CR, 1, mean), type="n", ylab="Crossover probability", xlab="Sample of Markov chain", ylim = c(0,1))
+for(i in 1:ncol(res$CR))
+  lines(1:nrow(res$CR), res$CR[,i], col=i+1)
+
+savePlot("Sect5_1.png", type="png")
