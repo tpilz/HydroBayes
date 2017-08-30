@@ -48,9 +48,14 @@ Must be < 1! Default: 0.1.}
 
 \emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
 
-\emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value;
+\emph{AR}: a t-by-nCR matrix giving the acceptance rate for each sample number and crossover value
+(first element is NA due to computational reasons);
 
-\emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value;
+\emph{CR}: a t-by-nCR matrix giving the selection probability for each sample number and crossover value
+(first element is NA due to computational reasons);
+
+\emph{R_stat}: a t-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
+due to computational reasons).
 }
 \description{
 Differential Evolution Adaptive Metropolis (DREAM) algorithm
