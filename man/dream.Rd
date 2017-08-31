@@ -13,7 +13,7 @@ dream(prior, pdf, nc, t, d, burnin = 0, adapt = 0.1, updateInterval = 10,
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
 Returns an N-by-d matrix.}
 
-\item{pdf}{A function(prior) that calculates the density of the target distribution for given prior.
+\item{pdf}{A function(prior) that calculates the log-density of the target distribution for given prior.
 Returns an N-variate vector.}
 
 \item{nc}{\code{numeric}. Number of chains evolved in parallel.}
@@ -61,7 +61,7 @@ Default: 1.}
 
 \emph{chain}: a (1-burnin)*t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
 
-\emph{density}: a (1-burnin)*t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+\emph{density}: a (1-burnin)*t/thin-by-nc matrix of log-densities computed by \code{pdf} at each iteration for each Markov chain;
 
 \emph{runtime}: time of function execution in seconds;
 

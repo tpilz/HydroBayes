@@ -1,7 +1,7 @@
 #' Differential Evolution Adaptive Metropolis (DREAM) algorithm
 #' @param prior A function(N,d) that draws N samples from a d-variate prior distribution.
 #' Returns an N-by-d matrix.
-#' @param pdf A function(prior) that calculates the density of the target distribution for given prior.
+#' @param pdf A function(prior) that calculates the log-density of the target distribution for given prior.
 #' Returns an N-variate vector.
 #' @param nc \code{numeric}. Number of chains evolved in parallel.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
@@ -32,7 +32,7 @@
 #'
 #' \emph{chain}: a (1-burnin)*t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
 #'
-#' \emph{density}: a (1-burnin)*t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+#' \emph{density}: a (1-burnin)*t/thin-by-nc matrix of log-densities computed by \code{pdf} at each iteration for each Markov chain;
 #'
 #' \emph{runtime}: time of function execution in seconds;
 #'
@@ -174,7 +174,8 @@ dream <- function(prior, pdf, nc, t, d,
     p_prop <- pdf(prop)
 
     # probability of acceptance (Metropolis acceptance ratio)
-    p_acc <- min(1, p_prop/p_last)
+    # p_acc <- min(1, p_prop/p_last)
+    p_acc <- exp( min(max(-100, p_prop - p_last), 0) )
     if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
       out_prop <- prop # accept candidate parameters
       out_p_prop <- p_prop # accept density accordingly
@@ -200,7 +201,7 @@ dream <- function(prior, pdf, nc, t, d,
 ## outlier detection and correction (DREAM-specific)
   check_outlier <- function(dens, x, N) {
     # mean log density of second half of chain samples as proxy for fitness of each chain
-    proxy <- colMeans( log(dens) )
+    proxy <- colMeans( dens )
     # calculate the Inter Quartile Range statistic (IQR method) of the chains
     quartiles <- quantile(proxy, probs = c(0.25,0.75))
     iqr <- diff(quartiles)
