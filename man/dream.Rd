@@ -6,7 +6,7 @@
 \usage{
 dream(prior, pdf, nc, t, d, burnin = 0.1, delta = 3, c_val = 0.1,
   c_star = 1e-06, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
-  ncores = 1)
+  ncores = 1, verbose = TRUE)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -43,6 +43,8 @@ Must be < 1! Default: 0.1.}
 \item{ncores}{\code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
 using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
 Default: 1.}
+
+\item{verbose}{\code{logical}. Print progress bar to console? Default: TRUE.}
 }
 \value{
 \code{list} with named elements:
@@ -72,7 +74,7 @@ To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect.
 of the reference paper (see below).
 }
 \references{
-Code from 'Algorithm 5' of:
+Code from 'Algorithm 5' and 'Algorithm 6' of:
 
 Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,

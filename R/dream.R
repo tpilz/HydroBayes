@@ -20,6 +20,7 @@
 #' @param ncores \code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
 #' using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
 #' Default: 1.
+#' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
 #'
 #' @return \code{list} with named elements:
 #'
@@ -56,7 +57,7 @@
 #' @export
 dream <- function(prior, pdf, nc, t, d,
                   burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, ncores = 1) {
+                  beta0 = 1, thin = 1, ncores = 1, verbose = TRUE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -139,8 +140,16 @@ dream <- function(prior, pdf, nc, t, d,
 
   ### Algorithm ###
 
+  # progress indicator
+  if(verbose)
+    pb <- txtProgressBar(min = 2, max = t, style = 3)
+
   # evolution of nc chains
   for(i in 2:t) {
+    # next progress message
+    if (verbose)
+      setTxtProgressBar(pb, i)
+
     # permute [1, ..., nc-1] nc times (to draw parameters a and b randomly later on)
     draw <- apply(array(runif((nc-1)*nc), dim = c(nc-1, nc)), 2, order)
     # set jump vectors to zero
@@ -190,15 +199,15 @@ dream <- function(prior, pdf, nc, t, d,
     } # end proposal generation
 
     # parallel loop: function evaluation and proposal acceptance/rejection
-    test <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
+    step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
 
     # distribute values calculated in parallel loop to variables
-    xt <- t(sapply(test, function(x) x$xt))
+    xt <- t(sapply(step_out, function(x) x$xt))
     if(d == 1)
       xt <- t(xt)
-    p_x[i,] <- sapply(test, function(x) x$p_xt)
-    dJ_t <- sapply(test, function(x) x$dJ)
-    acc_t <- sapply(test, function(x) x$acc)
+    p_x[i,] <- sapply(step_out, function(x) x$p_xt)
+    dJ_t <- sapply(step_out, function(x) x$dJ)
+    acc_t <- sapply(step_out, function(x) x$acc)
     for (h in 1:length(id)) {
       J[id[h]] <- J[id[h]] + dJ_t[h]
       n_id[id[h]] <- n_id[id[h]] + 1 # how many times crossover of id used?
@@ -248,6 +257,10 @@ dream <- function(prior, pdf, nc, t, d,
       outl[[i]] <- 0 # keep track of outliers
 
   } #  end chain processing
+
+  # close progress bar
+  if(verbose)
+    close(pb)
 
   # track processing time
   timeb <- Sys.time()
