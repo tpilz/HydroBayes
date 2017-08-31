@@ -92,7 +92,7 @@ dream <- function(prior, pdf, nc, t, d,
   # initialize chains by sampling from prior
   xt <- prior(nc,d)
   if(!is.matrix(xt))
-    matrix(xt, ncol=d)
+    xt <- matrix(xt, ncol=d)
   p_x[1,] <- pdf(xt)
 
   if(1 %% thin == 0)
