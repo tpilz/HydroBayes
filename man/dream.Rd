@@ -4,9 +4,9 @@
 \alias{dream}
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
-dream(prior, pdf, nc, t, d, burnin = 0.1, delta = 3, c_val = 0.1,
-  c_star = 1e-12, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
-  ncores = 1, verbose = TRUE)
+dream(prior, pdf, nc, t, d, burnin = 0, adapt = 0.1, updateInterval = 10,
+  delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
+  beta0 = 1, thin = 1, ncores = 1, verbose = TRUE)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -22,7 +22,13 @@ Returns an N-variate vector.}
 \item{d}{\code{numeric}. Number of parameters.}
 
 \item{burnin}{\code{numeric}. Length of the burn-in period as portion of t (\code{burnin period = burnin * t}).
-Must be < 1! Default: 0.1.}
+These samples from the Markov chain will not be included in the output. Default: 0.}
+
+\item{adapt}{\code{numeric}. Length of the adaptation period as portion of t
+(\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities and
+the replacement of outlier chains. Default: 0.1.}
+
+\item{updateInterval}{\code{integer}. Interval for crossover probability updates during the adaptation period.}
 
 \item{delta}{\code{integer}. Maximum number of chain pairs used to generate the jump (default: 3).}
 
@@ -49,22 +55,22 @@ Default: 1.}
 \value{
 \code{list} with named elements:
 
-\emph{chain}: a t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+\emph{chain}: a (1-burnin)*t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
 
-\emph{density}: a t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+\emph{density}: a (1-burnin)*t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
 
 \emph{runtime}: time of function execution in seconds;
 
-\emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
+\emph{outlier}: a list with adapt*t vectors of outlier indices in nc (value of 0 means no outliers);
 
-\emph{AR}: a t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
+\emph{AR}: a (1-burnin)*t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
 (first element is NA due to computational reasons);
 
-\emph{CR}: a t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
+\emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 (first element is NA due to computational reasons);
 
-\emph{R_stat}: a t/thin-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
-due to computational reasons).
+\emph{R_stat}: a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
+(note that at least 50 observations are used to compute R_stat).
 }
 \description{
 Differential Evolution Adaptive Metropolis (DREAM) algorithm

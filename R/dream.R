@@ -7,7 +7,11 @@
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
 #' @param burnin \code{numeric}. Length of the burn-in period as portion of t (\code{burnin period = burnin * t}).
-#' Must be < 1! Default: 0.1.
+#' These samples from the Markov chain will not be included in the output. Default: 0.
+#' @param adapt \code{numeric}. Length of the adaptation period as portion of t
+#' (\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities and
+#' the replacement of outlier chains. Default: 0.1.
+#' @param updateInterval \code{integer}. Interval for crossover probability updates during the adaptation period.
 #' @param delta \code{integer}. Maximum number of chain pairs used to generate the jump (default: 3).
 #' @param c_val \code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.1).
 #' @param c_star \code{numeric}. Zeta value sampled from N[0,c_star]. Should be small compared to target
@@ -24,22 +28,22 @@
 #'
 #' @return \code{list} with named elements:
 #'
-#' \emph{chain}: a t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+#' \emph{chain}: a (1-burnin)*t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
 #'
-#' \emph{density}: a t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
+#' \emph{density}: a (1-burnin)*t/thin-by-nc matrix of densities computed by \code{pdf} at each iteration for each Markov chain;
 #'
 #' \emph{runtime}: time of function execution in seconds;
 #'
-#' \emph{outlier}: a list with t vectors of outlier indices in nc (value of 0 means no outliers);
+#' \emph{outlier}: a list with adapt*t vectors of outlier indices in nc (value of 0 means no outliers);
 #'
-#' \emph{AR}: a t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
+#' \emph{AR}: a (1-burnin)*t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
 #' (first element is NA due to computational reasons);
 #'
-#' \emph{CR}: a t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
+#' \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 #' (first element is NA due to computational reasons);
 #'
-#' \emph{R_stat}: a t/thin-by-d matrix giving the Gelman-Rubin convergence diagnostic (first two elements are NA
-#' due to computational reasons).
+#' \emph{R_stat}: a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
+#' (note that at least 50 observations are used to compute R_stat).
 #'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
@@ -56,7 +60,7 @@
 #' @import doMC
 #' @export
 dream <- function(prior, pdf, nc, t, d,
-                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
+                  burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
                   beta0 = 1, thin = 1, ncores = 1, verbose = TRUE) {
 
   ### Argument checks ###
@@ -72,7 +76,7 @@ dream <- function(prior, pdf, nc, t, d,
   timea <- Sys.time()
 
   # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
-  x <- array(NaN, dim=c(t/thin,d,nc))
+  x <- array(NaN, dim=c((1-burnin)*t/thin,d,nc))
   p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
@@ -96,15 +100,16 @@ dream <- function(prior, pdf, nc, t, d,
     xt <- matrix(xt, ncol=d)
   p_x[1,] <- pdf(xt)
 
-  if(1 %% thin == 0)
+  if(burnin == 0 && 1 %% thin == 0)
     x[1/thin,,] <- t(xt)
 
   xp <- array(NA, dim = c(nc, d))
 
   # auxiliary variables
-  out_AR <- out_CR <- array(NA, dim = c(t/thin, nCR))
-  out_rstat <- array(NA, dim = c(t/thin, d))
+  out_AR <- out_CR <- array(NA, dim = c((1-burnin)*t/thin, nCR))
+  out_rstat <- array(NA, dim = c((1-burnin)*t/thin-50, d))
   outl <- list(NULL)
+  ind_out <- 0
 
 
   ### helper functions for vectorisation ###
@@ -249,36 +254,40 @@ dream <- function(prior, pdf, nc, t, d,
       n_acc[id[h]] <- n_acc[id[h]] + acc_t[h] # how many times a proposal was accpected?
     }
 
-    # store for output
-    if(i %% thin == 0) {
+    # store for output (respect burn-in period and possible output thinning)
+    if( (i > (burnin*t)) && (i %% thin == 0) ) {
+      ind_out <- ind_out + 1
+
       # chain states
-      x[i/thin,,] <- t(xt)
+      x[ind_out,,] <- t(xt)
 
       # AR and CR
-      out_AR[i/thin,] <- n_acc/n_id
-      out_CR[i/thin,] <- pCR
+      out_AR[ind_out,] <- n_acc/n_id
+      out_CR[ind_out,] <- pCR
 
-      # convergence diagnostic
-      if(i/thin > 2)
-        out_rstat[i/thin,] <- R_stat(x[1:(i/thin),,, drop = F])
+      # convergence diagnostic (needs as least 50 observations)
+      if(ind_out > 50)
+        out_rstat[ind_out-50,] <- R_stat(x[1:ind_out,,, drop = F])
     }
 
-    # during burn-in period
-    if (i <= (burnin*t) ) {
-      # update selection probability of crossover by jump distance following Vrugt, 2016 instead of Vrugt et al., 2009 (different results?!)
-      # favours larger jumps over smaller ones to speed up convergence
-      if(any(J > 0)) {
-        pCR <- J/n_id
-        pCR[which(is.nan(pCR))] <- 1/nCR # if a specific n_id is zero, i.e. was not yet used
-        pCR <- pCR/sum(pCR)
+    # during adaptation period
+    if (i <= (adapt*t)) {
+      if (i%%updateInterval == 0) {
+        # update selection probability of crossover by jump distance following Vrugt, 2016 instead of Vrugt et al., 2009 (different results?!)
+        # favours larger jumps over smaller ones to speed up convergence
+        if(any(J > 0)) {
+          pCR <- J/n_id
+          pCR[which(is.nan(pCR))] <- 1/nCR # if a specific n_id is zero, i.e. was not yet used
+          pCR <- pCR/sum(pCR)
+        }
       }
-    }
 
-    # check for outliers and correct them
-    check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
-    xt <- check_out$xt
-    p_x[i,] <- check_out$p_x
-    outl[[i]] <- check_out$outliers
+      # check for outliers and correct them
+      check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
+      xt <- check_out$xt
+      p_x[i,] <- check_out$p_x
+      outl[[i]] <- check_out$outliers
+    }
 
   } #  end chain processing
 
@@ -291,7 +300,7 @@ dream <- function(prior, pdf, nc, t, d,
 
   # prepare output
   output <- list(chain = x,
-                 density = p_x[seq(thin, t, by=thin),],
+                 density = p_x[seq(burnin*t+thin, t, by=thin),],
                  runtime = timeb - timea,
                  outlier = outl,
                  AR = out_AR,
