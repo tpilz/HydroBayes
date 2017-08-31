@@ -151,7 +151,8 @@ dream <- function(prior, pdf, nc, t, d,
       setTxtProgressBar(pb, i)
 
     # permute [1, ..., nc-1] nc times (to draw parameters a and b randomly later on)
-    draw <- apply(array(runif((nc-1)*nc), dim = c(nc-1, nc)), 2, order)
+    #draw <- apply(array(runif((nc-1)*nc), dim = c(nc-1, nc)), 2, order)
+    draw <- replicate(nc, sample(c(1:(nc-1)),delta*2))
     # set jump vectors to zero
     dx <- array(0, dim = c(nc, d))
     # draw lambda values
