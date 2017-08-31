@@ -9,9 +9,9 @@
 #' @param burnin \code{numeric}. Length of the burn-in period as portion of t (\code{burnin period = burnin * t}).
 #' Must be < 1! Default: 0.1.
 #' @param delta \code{integer}. Maximum number of chain pairs used to generate the jump (default: 3).
-#' @param c_val \code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.3).
+#' @param c_val \code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.1).
 #' @param c_star \code{numeric}. Zeta value sampled from N[0,c_star]. Should be small compared to target
-#' (i.e. in this case the normal) distribution. Default: 1e-6.
+#' (i.e. in this case the normal) distribution. Default: 1e-12.
 #' @param nCR \code{integer}. Length of vector with crossover probabilities for parameter subspace sampling (default: 3).
 #' @param p_g \code{numeric}. Probability for gamma, the jump rate, being equal to 1. Default: 0.2.
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
@@ -56,7 +56,7 @@
 #' @import doMC
 #' @export
 dream <- function(prior, pdf, nc, t, d,
-                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-6, nCR = 3, p_g = 0.2,
+                  burnin = 0.1, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
                   beta0 = 1, thin = 1, ncores = 1, verbose = TRUE) {
 
   ### Argument checks ###
@@ -107,8 +107,48 @@ dream <- function(prior, pdf, nc, t, d,
   outl <- list(NULL)
 
 
-  ### helper functions ###
-  # function used for parallel calculation (pdf evaluation and acceptance/rejection of proposal)
+  ### helper functions for vectorisation ###
+
+## function generating the jumping distance for a specific chain
+  jump <- function(x, d, CR, nCR, pCR, draw, R, delta, lambda, p_g) {
+    # initialise
+    dx <- rep(0, d)
+
+    # prepare parameter subspace sampling (DREAM-specific extensin of DE-MC)
+    # select delta (equal selection probabilities)
+    D <- sample(1:delta, 1, replace = TRUE)
+    # extract a != b != j
+    a <- R[draw[1:D]]
+    b <- R[draw[(D+1):(D*2)]]
+    # index of crossover value
+    id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
+    # d values from U[0,1]
+    z <- runif(d)
+    # derive subset A of selected dimensions (parameters)
+    A <- which(z < CR[id])
+    # how many dimensions/parameters sampled?
+    d_star <- length(A)
+    # A needs one value at least
+    if(d_star == 0) {
+      A <- which.min(z)
+      d_star <- 1
+    }
+
+    # jump rate
+    gamma_d <- 2.38/sqrt(2*D*d_star)
+    # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
+    g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
+
+    # compute jump (differential evolution) for parameter subset
+    dx[A] <- rnorm(d_star, sd=c_star) + (1+lambda) * g * colSums(x[a,A, drop=F] - x[b,A, drop=F])
+    # adjust jumping distance if desired
+    dx[A] <- dx[A] * beta0
+
+    # output
+    return(list(dx = dx, id = id))
+  } # EOF prop_gen
+
+## function for pdf evaluation and acceptance/rejection of proposal
   stepfun <- function(prop, x_last, p_last, dx, std_x) {
 
     # calculate density at proposal
@@ -138,6 +178,27 @@ dream <- function(prior, pdf, nc, t, d,
                 acc = acc))
   } # EOF stepfun
 
+## outlier detection and correction (DREAM-specific)
+  check_outlier <- function(dens, x, N) {
+    # mean log density of second half of chain samples as proxy for fitness of each chain
+    proxy <- colMeans( log(dens) )
+    # calculate the Inter Quartile Range statistic (IQR method) of the chains
+    quartiles <- quantile(proxy, probs = c(0.25,0.75))
+    iqr <- diff(quartiles)
+    # identify outlier chains
+    outliers <- which(proxy < quartiles[1] - 2*iqr)
+    # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
+    if(length(outliers) > 0) {
+      new_states <- sample((1:N)[-outliers], length(outliers), replace = FALSE)
+      x[outliers,] <- x[new_states,]
+      dens[nrow(dens),outliers] <- dens[nrow(dens),new_states]
+    }
+    # output
+    return(list(xt = x, p_x = dens[nrow(dens),], outliers = outliers))
+  } # EOF check_outlier
+
+
+
   ### Algorithm ###
 
   # progress indicator
@@ -160,49 +221,22 @@ dream <- function(prior, pdf, nc, t, d,
     # std for each dimension
     std_x <- apply(xt, 2, sd)
 
-    # generate proposals for each chain
-    for (j in 1:nc) {
-      # prepare parameter subspace sampling (DREAM-specific extensin of DE-MC)
-      # select delta (equal selection probabilities)
-      D <- sample(1:delta, 1, replace = TRUE)
-      # extract a != b != j
-      a <- R[j, draw[1:D,j]]
-      b <- R[j, draw[(D+1):(D*2),j]]
-      if(any(a == b) || any(a == j) || any(b == j))
-        stop("During chain selection something unexpected happened (some a equals some b or some a or b equals j)!")
-      # index of crossover value
-      id[j] <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
-      # d values from U[0,1]
-      z <- runif(d)
-      # derive subset A of selected dimensions (parameters)
-      A <- which(z < CR[id[j]])
-      # how many dimensions/parameters sampled?
-      d_star <- length(A)
-      # A needs one value at least
-      if(d_star == 0) {
-        A <- which.min(z)
-        d_star <- 1
-      }
+    # generate jump
+    jump_out <- lapply(1:nc, function(j) jump(xt, d, CR, nCR, pCR, draw[,j], R[j,], delta, lambda[j], p_g))
+    dx <- t(sapply(jump_out, function(x) x$dx))
+    if(d == 1)
+      dx <- t(dx)
+    id <- sapply(jump_out, function(x) x$id)
 
-      # jump rate
-      gamma_d <- 2.38/sqrt(2*D*d_star)
-      # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
-      g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
+    # calculate proposal
+    xp <- xt + dx
 
-      # compute jump (differential evolution) for parameter subset
-      dx[j, A] <- rnorm(d_star, sd=c_star) + (1+lambda[j]) * g * apply(xt[a,A, drop=F] - xt[b,A, drop=F], 2, sum)
-      # adjust jumping distance if desired
-      dx[j, A] <- dx[j, A] * beta0
-
-      # compute proposal
-      xp[j,] <- xt[j,] + dx[j,]
-
-    } # end proposal generation
-
-    # parallel loop: function evaluation and proposal acceptance/rejection
-    step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
-
-    # distribute values calculated in parallel loop to variables
+    # function evaluation and proposal acceptance/rejection
+    if (ncores == 1)
+      step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
+    else
+      step_out <- lapply(1:nc, function(j) stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x))
+    # distribute calculated values to variables
     xt <- t(sapply(step_out, function(x) x$xt))
     if(d == 1)
       xt <- t(xt)
@@ -240,22 +274,11 @@ dream <- function(prior, pdf, nc, t, d,
       }
     }
 
-    # outlier detection and correction (DREAM-specific)
-    # mean log density of second half of chain samples as proxy for fitness of each chain
-    proxy <- apply( log( p_x[ceiling(i/2):i, ] ), 2, mean)
-    # calculate the Inter Quartile Range statistic (IQR method) of the chains
-    quartiles <- quantile(proxy, probs = c(0.25,0.75))
-    iqr <- diff(quartiles)
-    # identify outlier chains
-    outliers <- which(proxy < quartiles[1] - 2*iqr)
-    # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
-    if(length(outliers) > 0) {
-      new_states <- sample((1:nc)[-outliers], length(outliers), replace = FALSE)
-      xt[outliers,] <- xt[new_states,]
-      p_x[i,outliers] <- p_x[i,new_states]
-      outl[[i]] <- outliers # keep track of outliers
-    } else
-      outl[[i]] <- 0 # keep track of outliers
+    # check for outliers and correct them
+    check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
+    xt <- check_out$xt
+    p_x[i,] <- check_out$p_x
+    outl[[i]] <- check_out$outliers
 
   } #  end chain processing
 

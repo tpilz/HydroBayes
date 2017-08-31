@@ -5,7 +5,7 @@
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
 dream(prior, pdf, nc, t, d, burnin = 0.1, delta = 3, c_val = 0.1,
-  c_star = 1e-06, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
+  c_star = 1e-12, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
   ncores = 1, verbose = TRUE)
 }
 \arguments{
@@ -26,10 +26,10 @@ Must be < 1! Default: 0.1.}
 
 \item{delta}{\code{integer}. Maximum number of chain pairs used to generate the jump (default: 3).}
 
-\item{c_val}{\code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.3).}
+\item{c_val}{\code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.1).}
 
 \item{c_star}{\code{numeric}. Zeta value sampled from N[0,c_star]. Should be small compared to target
-(i.e. in this case the normal) distribution. Default: 1e-6.}
+(i.e. in this case the normal) distribution. Default: 1e-12.}
 
 \item{nCR}{\code{integer}. Length of vector with crossover probabilities for parameter subspace sampling (default: 3).}
 
