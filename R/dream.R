@@ -78,7 +78,7 @@ dream <- function(prior, pdf, nc, t, d,
   timea <- Sys.time()
 
   # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
-  x <- array(NaN, dim=c((1-burnin)*t/thin,d,nc))
+  out_x <- array(NaN, dim=c((1-burnin)*t/thin,d,nc))
   p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
@@ -86,11 +86,6 @@ dream <- function(prior, pdf, nc, t, d,
 
   # vector of sampled crossover indices
   id <- rep(NA, nc)
-
-  # R-Matrix: index of chains for DE
-  R <- array(NaN, dim=c(nc, nc-1))
-  nc_t <- 1:nc
-  for(i in 1:nc) R[i, 1:(nc-1)] <- nc_t[which(nc_t != i)]
 
   # crossover values and selection probabilities
   CR <- c(1:nCR)/nCR
@@ -114,7 +109,7 @@ dream <- function(prior, pdf, nc, t, d,
   ind_out <- 0
 
   if(burnin == 0 && 1 %% thin == 0) {
-    x[1,,] <- t(xt)
+    out_x[1,,] <- t(xt)
     out_AR[1,] <- rep(0,3)
     out_CR[1,] <- pCR
     ind_out <- ind_out+1
@@ -124,7 +119,7 @@ dream <- function(prior, pdf, nc, t, d,
   ### helper functions for vectorisation ###
 
 ## function generating the jumping distance for a specific chain
-  jump <- function(x, d, CR, nCR, pCR, R, delta, p_g) {
+  jump <- function(j, nc, x, d, CR, nCR, pCR, delta, p_g) {
     # initialise
     dx <- rep(0, d)
 
@@ -134,7 +129,7 @@ dream <- function(prior, pdf, nc, t, d,
     # extract a != b != j
     # a <- R[draw[1:D]]
     # b <- R[draw[(D+1):(D*2)]]
-    samp <- sample(R, D*2, replace = FALSE)
+    samp <- sample((1:nc)[-j], D*2, replace = FALSE)
     a <- samp[1:D]
     b <- samp[(D+1):(2*D)]
     # index of crossover value
@@ -168,7 +163,7 @@ dream <- function(prior, pdf, nc, t, d,
   } # EOF prop_gen
 
 ## function for pdf evaluation and acceptance/rejection of proposal
-  stepfun <- function(prop, x_last, p_last, dx, std_x) {
+  stepfun <- function(prop, x_last, p_last, std_x) {
 
     # calculate density at proposal
     p_prop <- pdf(prop)
@@ -184,12 +179,11 @@ dream <- function(prior, pdf, nc, t, d,
       # retain previous values
       out_prop <- x_last
       out_p_prop <- p_last
-      dx <- 0 # set jump back to zero for pCR
       acc <- 0 # rejected
     }
 
     # jump distance (euclidean distance of parameter moves)
-    dJ <- sum((dx/std_x)^2)
+    dJ <- sum(((out_prop - x_last)/std_x)^2)
 
     # output
     return(list(xt = out_prop,
@@ -231,14 +225,8 @@ dream <- function(prior, pdf, nc, t, d,
     if (verbose)
       setTxtProgressBar(pb, i)
 
-    # permute [1, ..., nc-1] nc times (to draw parameters a and b randomly later on)
-    #draw <- apply(array(runif((nc-1)*nc), dim = c(nc-1, nc)), 2, order)
-    # draw <- replicate(nc, sample(c(1:(nc-1)),delta*2))
-    # std for each dimension
-    std_x <- apply(xt, 2, sd)
-
     # generate jump
-    jump_out <- lapply(1:nc, function(j) jump(xt, d, CR, nCR, pCR, R[j,], delta, p_g))
+    jump_out <- lapply(1:nc, function(j) jump(j, nc, xt, d, CR, nCR, pCR, delta, p_g))
     dx <- t(sapply(jump_out, function(x) x$dx))
     if(d == 1)
       dx <- t(dx)
@@ -247,11 +235,14 @@ dream <- function(prior, pdf, nc, t, d,
     # calculate proposal
     xp <- xt + dx
 
+    # std within a chain for each parameter do calculate euclidean jump distance
+    std_x <- apply(xt, 2, sd)
+
     # function evaluation and proposal acceptance/rejection
     if (ncores > 1)
-      step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
+      step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], std_x)
     else
-      step_out <- lapply(1:nc, function(j) stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x))
+      step_out <- lapply(1:nc, function(j) stepfun(xp[j,], xt[j,], p_x[i-1,j], std_x))
     # distribute calculated values to variables
     xt <- t(sapply(step_out, function(x) x$xt))
     if(d == 1)
@@ -270,7 +261,7 @@ dream <- function(prior, pdf, nc, t, d,
       ind_out <- ind_out + 1
 
       # chain states
-      x[ind_out,,] <- t(xt)
+      out_x[ind_out,,] <- t(xt)
 
       # AR and CR
       out_AR[ind_out,] <- n_acc/n_id
@@ -278,7 +269,7 @@ dream <- function(prior, pdf, nc, t, d,
 
       # convergence diagnostic (needs as least 50 observations)
       if(checkConvergence == T && ind_out > 50)
-        out_rstat[ind_out-50,] <- R_stat(x[1:ind_out,,, drop = F])
+        out_rstat[ind_out-50,] <- R_stat(out_x[1:ind_out,,, drop = F])
     }
 
     # during adaptation period
@@ -310,7 +301,7 @@ dream <- function(prior, pdf, nc, t, d,
   timeb <- Sys.time()
 
   # prepare output
-  output <- list(chain = x,
+  output <- list(chain = out_x,
                  density = p_x[seq(burnin*t+thin, t, by=thin),],
                  runtime = timeb - timea,
                  outlier = outl,
