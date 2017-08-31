@@ -91,7 +91,7 @@ dream <- function(prior, pdf, nc, t, d,
 
   # initialize chains by sampling from prior
   xt <- prior(nc,d)
-  if(!is.matrix(xt))
+  if(!is.matrix(xt)) # if d=1
     xt <- matrix(xt, ncol=d)
   p_x[1,] <- pdf(xt)
 
@@ -194,6 +194,8 @@ dream <- function(prior, pdf, nc, t, d,
 
     # distribute values calculated in parallel loop to variables
     xt <- t(sapply(test, function(x) x$xt))
+    if(d == 1)
+      xt <- t(xt)
     p_x[i,] <- sapply(test, function(x) x$p_xt)
     dJ_t <- sapply(test, function(x) x$dJ)
     acc_t <- sapply(test, function(x) x$acc)
@@ -230,7 +232,7 @@ dream <- function(prior, pdf, nc, t, d,
 
     # outlier detection and correction (DREAM-specific)
     # mean log density of second half of chain samples as proxy for fitness of each chain
-    proxy <- apply( log( p_x[ceiling(i/2):i, 1:nc] ), 2, mean)
+    proxy <- apply( log( p_x[ceiling(i/2):i, ] ), 2, mean)
     # calculate the Inter Quartile Range statistic (IQR method) of the chains
     quartiles <- quantile(proxy, probs = c(0.25,0.75))
     iqr <- diff(quartiles)
