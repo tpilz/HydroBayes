@@ -6,7 +6,8 @@
 \usage{
 dream(prior, pdf, nc, t, d, burnin = 0, adapt = 0.1, updateInterval = 10,
   delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-  beta0 = 1, thin = 1, ncores = 1, verbose = TRUE)
+  beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1,
+  verbose = TRUE)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -46,6 +47,9 @@ the replacement of outlier chains. Default: 0.1.}
 
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
 
+\item{checkConvergence}{\code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
+Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.}
+
 \item{ncores}{\code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
 using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
 Default: 1.}
@@ -69,8 +73,8 @@ Default: 1.}
 \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 (first element is NA due to computational reasons);
 
-\emph{R_stat}: a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
-(note that at least 50 observations are used to compute R_stat).
+\emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
+(note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
 }
 \description{
 Differential Evolution Adaptive Metropolis (DREAM) algorithm
@@ -80,7 +84,7 @@ To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect.
 of the reference paper (see below).
 }
 \references{
-Code from 'Algorithm 5' and 'Algorithm 6' of:
+Code based on 'Algorithm 5' and 'Algorithm 6' of:
 
 Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,

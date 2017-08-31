@@ -21,6 +21,8 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
+#' @param checkConvergence \code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
+#' Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.
 #' @param ncores \code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
 #' using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
 #' Default: 1.
@@ -42,13 +44,13 @@
 #' \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 #' (first element is NA due to computational reasons);
 #'
-#' \emph{R_stat}: a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
-#' (note that at least 50 observations are used to compute R_stat).
+#' \emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
+#' (note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
 #'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
 #'
-#' @references Code from 'Algorithm 5' and 'Algorithm 6' of:
+#' @references Code based on 'Algorithm 5' and 'Algorithm 6' of:
 #'
 #' Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 #' Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,
@@ -61,7 +63,7 @@
 #' @export
 dream <- function(prior, pdf, nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, ncores = 1, verbose = TRUE) {
+                  beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1, verbose = TRUE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -100,22 +102,29 @@ dream <- function(prior, pdf, nc, t, d,
     xt <- matrix(xt, ncol=d)
   p_x[1,] <- pdf(xt)
 
-  if(burnin == 0 && 1 %% thin == 0)
-    x[1/thin,,] <- t(xt)
-
   xp <- array(NA, dim = c(nc, d))
 
   # auxiliary variables
   out_AR <- out_CR <- array(NA, dim = c((1-burnin)*t/thin, nCR))
-  out_rstat <- array(NA, dim = c((1-burnin)*t/thin-50, d))
+  if(checkConvergence)
+    out_rstat <- array(NA, dim = c((1-burnin)*t/thin-50, d))
+  else
+    out_rstat <- NULL
   outl <- list(NULL)
   ind_out <- 0
+
+  if(burnin == 0 && 1 %% thin == 0) {
+    x[1,,] <- t(xt)
+    out_AR[1,] <- rep(0,3)
+    out_CR[1,] <- pCR
+    ind_out <- ind_out+1
+  }
 
 
   ### helper functions for vectorisation ###
 
 ## function generating the jumping distance for a specific chain
-  jump <- function(x, d, CR, nCR, pCR, draw, R, delta, lambda, p_g) {
+  jump <- function(x, d, CR, nCR, pCR, R, delta, p_g) {
     # initialise
     dx <- rep(0, d)
 
@@ -123,8 +132,11 @@ dream <- function(prior, pdf, nc, t, d,
     # select delta (equal selection probabilities)
     D <- sample(1:delta, 1, replace = TRUE)
     # extract a != b != j
-    a <- R[draw[1:D]]
-    b <- R[draw[(D+1):(D*2)]]
+    # a <- R[draw[1:D]]
+    # b <- R[draw[(D+1):(D*2)]]
+    samp <- sample(R, D*2, replace = FALSE)
+    a <- samp[1:D]
+    b <- samp[(D+1):(2*D)]
     # index of crossover value
     id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
     # d values from U[0,1]
@@ -138,6 +150,8 @@ dream <- function(prior, pdf, nc, t, d,
       A <- which.min(z)
       d_star <- 1
     }
+    # draw lambda values (as stated in text instead of Algorithm 5/6)
+    lambda <- runif(d_star, min = -c_val, max = c_val)
 
     # jump rate
     gamma_d <- 2.38/sqrt(2*D*d_star)
@@ -218,16 +232,12 @@ dream <- function(prior, pdf, nc, t, d,
 
     # permute [1, ..., nc-1] nc times (to draw parameters a and b randomly later on)
     #draw <- apply(array(runif((nc-1)*nc), dim = c(nc-1, nc)), 2, order)
-    draw <- replicate(nc, sample(c(1:(nc-1)),delta*2))
-    # set jump vectors to zero
-    dx <- array(0, dim = c(nc, d))
-    # draw lambda values
-    lambda <- runif(nc, min = -c_val, max = c_val)
+    # draw <- replicate(nc, sample(c(1:(nc-1)),delta*2))
     # std for each dimension
     std_x <- apply(xt, 2, sd)
 
     # generate jump
-    jump_out <- lapply(1:nc, function(j) jump(xt, d, CR, nCR, pCR, draw[,j], R[j,], delta, lambda[j], p_g))
+    jump_out <- lapply(1:nc, function(j) jump(xt, d, CR, nCR, pCR, R[j,], delta, p_g))
     dx <- t(sapply(jump_out, function(x) x$dx))
     if(d == 1)
       dx <- t(dx)
@@ -237,7 +247,7 @@ dream <- function(prior, pdf, nc, t, d,
     xp <- xt + dx
 
     # function evaluation and proposal acceptance/rejection
-    if (ncores == 1)
+    if (ncores > 1)
       step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x)
     else
       step_out <- lapply(1:nc, function(j) stepfun(xp[j,], xt[j,], p_x[i-1,j], dx[j,], std_x))
@@ -266,7 +276,7 @@ dream <- function(prior, pdf, nc, t, d,
       out_CR[ind_out,] <- pCR
 
       # convergence diagnostic (needs as least 50 observations)
-      if(ind_out > 50)
+      if(checkConvergence == T && ind_out > 50)
         out_rstat[ind_out-50,] <- R_stat(x[1:ind_out,,, drop = F])
     }
 
