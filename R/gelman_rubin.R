@@ -28,7 +28,7 @@ R_stat <- function(x) {
   # helper function to be applied over each parameter
   W_r <- function(y) {
     # a mean value for each chain
-    x_mean <- 2 / (t-2) * apply(y, 2, sum)
+    x_mean <- 2 / (t-2) * colSums(y)
     # calculate squared differences of values from mean for each chain and sum up everything
     return(sum(apply(y, 1, function(z) (z - x_mean)^2)))
   }
@@ -39,7 +39,7 @@ R_stat <- function(x) {
   # between chain variance for each parameter
   B_r <- function(y) {
     # a mean value for each chain
-    x_mean <- 2 / (t-2) * apply(y, 2, sum)
+    x_mean <- 2 / (t-2) * colSums(y)
     # mean of chain-means
     x_mm <- mean(x_mean)
     # variance of chain means
