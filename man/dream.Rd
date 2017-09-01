@@ -7,7 +7,7 @@
 dream(prior, pdf, nc, t, d, burnin = 0, adapt = 0.1, updateInterval = 10,
   delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
   beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1,
-  verbose = TRUE)
+  verbose = TRUE, DEBUG = FALSE)
 }
 \arguments{
 \item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
@@ -55,6 +55,9 @@ using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only us
 Default: 1.}
 
 \item{verbose}{\code{logical}. Print progress bar to console? Default: TRUE.}
+
+\item{DEBUG}{\code{logical}. Option enables further output for error and/or more in-depth analysis.
+See below. Default: FALSE.}
 }
 \value{
 \code{list} with named elements:
@@ -75,6 +78,27 @@ Default: 1.}
 
 \emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
 (note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
+
+IF DEBUG == TRUE:
+
+\emph{DEBUG}: a list with the elements:
+
+\emph{J}: a t-by-nCR matrix of cumulated Euclidean jump distances during the Markov chain progressing;
+
+\emph{dx}: a t-by-nc-by-d array of jump proposals;
+
+\emph{dx_eff}: a t-by-nc-by-d array of accepted jumps;
+
+\emph{std}: a t-by-d matrix of standard deviations of the chain for each parameter.
+Note: J_i = J_i-1 + sum( (dx_eff_i/std_i)^2 );
+
+\emph{gamma}: a t-by-nc matrix of jump rate values;
+
+\emph{lambda}: a t-by-nc-by-d array of lambda values;
+
+\emph{zeta}: a t-by-nc-by-d array of zeta values;
+
+\emph{jump_diff}: a t-by-nc-by-d array of jump differentials ( sum(X_a - X_b) ).
 }
 \description{
 Differential Evolution Adaptive Metropolis (DREAM) algorithm

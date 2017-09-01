@@ -27,6 +27,8 @@
 #' using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
 #' Default: 1.
 #' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
+#' @param DEBUG \code{logical}. Option enables further output for error and/or more in-depth analysis.
+#' See below. Default: FALSE.
 #'
 #' @return \code{list} with named elements:
 #'
@@ -47,6 +49,27 @@
 #' \emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
 #' (note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
 #'
+#' IF DEBUG == TRUE:
+#'
+#' \emph{DEBUG}: a list with the elements:
+#'
+#' \emph{J}: a t-by-nCR matrix of cumulated Euclidean jump distances during the Markov chain progressing;
+#'
+#' \emph{dx}: a t-by-nc-by-d array of jump proposals;
+#'
+#' \emph{dx_eff}: a t-by-nc-by-d array of accepted jumps;
+#'
+#' \emph{std}: a t-by-d matrix of standard deviations of the chain for each parameter.
+#' Note: J_i = J_i-1 + sum( (dx_eff_i/std_i)^2 );
+#'
+#' \emph{gamma}: a t-by-nc matrix of jump rate values;
+#'
+#' \emph{lambda}: a t-by-nc-by-d array of lambda values;
+#'
+#' \emph{zeta}: a t-by-nc-by-d array of zeta values;
+#'
+#' \emph{jump_diff}: a t-by-nc-by-d array of jump differentials ( sum(X_a - X_b) ).
+#'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
 #'
@@ -63,7 +86,7 @@
 #' @export
 dream <- function(prior, pdf, nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1, verbose = TRUE) {
+                  beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1, verbose = TRUE, DEBUG = FALSE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -115,11 +138,31 @@ dream <- function(prior, pdf, nc, t, d,
     ind_out <- ind_out+1
   }
 
+  # DEBUG
+  if(DEBUG) {
+    out_J <- array(NA, dim=c(t, nCR))
+    out_J[1,] <- J
+    out_dx <- array(NA, dim=c(t, nc, d))
+    out_dx[1,,] <- 0
+    out_dx_eff <- array(NA, dim=c(t, nc, d))
+    out_dx_eff[1,,] <- 0
+    out_std <- array(NA, dim=c(t, d))
+    out_std[1,] <- 0
+    out_gamma <- array(NA, dim=c(t,nc))
+    out_gamma[1,] <- 0
+    out_lambda <- array(NA, dim=c(t, nc, d))
+    out_lambda[1,,] <- 0
+    out_zeta <- array(NA, dim=c(t, nc, d))
+    out_zeta[1,,] <- 0
+    out_jumpdiff <- array(NA, dim=c(t, nc, d))
+    out_jumpdiff[1,,] <- 0
+  }
+
 
   ### helper functions for vectorisation ###
 
 ## function generating the jumping distance for a specific chain
-  jump <- function(j, nc, x, d, CR, nCR, pCR, delta, p_g) {
+  jump <- function(j, nc, x, d, CR, nCR, pCR, delta, p_g, beta0, DEBUG) {
     # initialise
     dx <- rep(0, d)
 
@@ -153,14 +196,30 @@ dream <- function(prior, pdf, nc, t, d,
     # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
     g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
 
+    # small random disturbance
+    zeta <- rnorm(d_star, sd=c_star)
+
+    # jump differential
+    jump_diff <- colSums(x[a,A, drop=F] - x[b,A, drop=F])
+
     # compute jump (differential evolution) for parameter subset
-    dx[A] <- rnorm(d_star, sd=c_star) + (1+lambda) * g * colSums(x[a,A, drop=F] - x[b,A, drop=F])
+    dx[A] <- zeta + (1+lambda) * g * jump_diff
     # adjust jumping distance if desired
     dx[A] <- dx[A] * beta0
 
     # output
-    return(list(dx = dx, id = id))
-  } # EOF prop_gen
+    output <- list(dx = dx, id = id)
+    if(DEBUG) {
+      lambda_t <- rep(0, d)
+      lambda_t[A] <- lambda
+      zeta_t <- rep(0, d)
+      zeta_t[A] <- zeta
+      jump_diff_t <- rep(0, d)
+      jump_diff_t[A] <- jump_diff
+      output[["DEBUG"]] <- list(gamma = g, lambda = lambda_t, zeta = zeta_t, jump_diff = jump_diff_t)
+    }
+    return(output)
+  } # EOF jump
 
 ## function for pdf evaluation and acceptance/rejection of proposal
   stepfun <- function(prop, x_last, p_last, std_x) {
@@ -226,14 +285,29 @@ dream <- function(prior, pdf, nc, t, d,
       setTxtProgressBar(pb, i)
 
     # generate jump
-    jump_out <- lapply(1:nc, function(j) jump(j, nc, xt, d, CR, nCR, pCR, delta, p_g))
+    jump_out <- lapply(1:nc, function(j) jump(j, nc, xt, d, CR, nCR, pCR, delta, p_g, beta0, DEBUG))
     dx <- t(sapply(jump_out, function(x) x$dx))
     if(d == 1)
       dx <- t(dx)
     id <- sapply(jump_out, function(x) x$id)
 
+    if(DEBUG) {
+      out_gamma[i,] <- sapply(jump_out, function(x) x$DEBUG$gamma)
+      if (d==1) {
+        out_lambda[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$lambda)))
+        out_zeta[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$zeta)))
+        out_jumpdiff[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$jump_diff)))
+      } else {
+        out_lambda[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$lambda))
+        out_zeta[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$zeta))
+        out_jumpdiff[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$jump_diff))
+      }
+    }
+
     # calculate proposal
     xp <- xt + dx
+
+    if(DEBUG) xt_prev <- xt # DEBUG
 
     # std within a chain for each parameter do calculate euclidean jump distance
     std_x <- apply(xt, 2, sd)
@@ -291,6 +365,14 @@ dream <- function(prior, pdf, nc, t, d,
       outl[[i]] <- check_out$outliers
     }
 
+    # DEBUG
+    if(DEBUG) {
+      out_J[i,] <- J
+      out_dx[i,,] <- dx
+      out_dx_eff[i,,] <- xt - xt_prev
+      out_std[i,] <- std_x
+    }
+
   } #  end chain processing
 
   # close progress bar
@@ -308,6 +390,17 @@ dream <- function(prior, pdf, nc, t, d,
                  AR = out_AR,
                  CR = out_CR,
                  R_stat = out_rstat)
+
+  if(DEBUG)
+    output[["DEBUG"]] <- list(J = out_J,
+                              dx = out_dx,
+                              dx_eff = out_dx_eff,
+                              std = out_std,
+                              gamma = out_gamma,
+                              lambda = out_lambda,
+                              zeta = out_zeta,
+                              jump_diff = out_jumpdiff)
+
 
   return(output)
 } # EOF
