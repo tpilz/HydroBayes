@@ -46,26 +46,28 @@ de_mc <- function(prior, pdf, nc, t, d) {
     # select jump rate gamma: weighted random sample of gamma_RWM or 1 with probabilities 0.9 and 0.1, respectively
     g <- sample(x = c(gamma_RWM, 1), size = 1, replace = TRUE, prob = c(0.9, 0.1))
 
+    # initialise chains for current i based on i-1
+    x[i,,] <- x[i-1,,]
+
     # proposal and accept/reject for each chain
     for (j in 1:nc) {
-      # extract a != b != j
-      a <- R[j, draw[1,j]]
-      b <- R[j, draw[2,j]]
-      if(a == b || a == j || b == j)
-        stop("During chain selection something unexpected happened (a==b or a or b equal to current chain index)!")
+      # sample chains used to calculate prposal for current chain, a != b != j
+      sam <- sample((1:nc)[-j], 2, replace = FALSE)
+      a <- sam[1]
+      b <- sam[2]
 
       # create proposal via differential evolution
-      xp <- x[i-1,,j] + g * (x[i-1,,a] - x[i-1,,b]) + rnorm(d, sd=1e-6)
+      xp <- x[i,,j] + g * (x[i,,a] - x[i,,b]) + rnorm(d, sd=1e-6)
+
       # calculate density at proposal
       p_xp <- pdf(xp)
 
       # probability of acceptance (Metropolis acceptance ratio)
       p_acc <- min(1, p_xp/p_x[i-1,j])
       if(p_acc > runif(1)) { # larger than sample point from U[0,1]?
-        x[i,,j] <- xp # accept candidate parameters
+        x[i,,j] <- xp # accept candidate; NOTE: accepted candidate for chain j at i already used to calculate proposal for next chain j+1 at i, otherwise multi-modal target pdfs will not sampled correctly
         p_x[i,j] <- p_xp # accept density accordingly
       } else {
-        x[i,,j] <- x[i-1,,j] # retain previous parameter values
         p_x[i,j] <- p_x[i-1,j] # retain previous density accordingly
       }
     }
