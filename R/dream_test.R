@@ -1,4 +1,4 @@
-#' Differential Evolution Adaptive Metropolis (DREAM) algorithm
+#' TEST Implementation of DREAM
 #' @param prior A function(N,d) that draws N samples from a d-variate prior distribution.
 #' Returns an N-by-d matrix.
 #' @param pdf A function(prior) that calculates the log-density of the target distribution for given prior.
@@ -23,6 +23,9 @@
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
 #' @param checkConvergence \code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 #' Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.
+#' @param ncores \code{integer} specifying the number of cores to be used for parallel \code{pdf} evaluation
+#' using the \code{\link[doMC]{doMC}} package (Linux only!). A value > 1 is only useful for complex \code{pdf}.
+#' Default: 1.
 #' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
 #' @param DEBUG \code{logical}. Option enables further output for error and/or more in-depth analysis.
 #' See below. Default: FALSE.
@@ -81,9 +84,9 @@
 #' @import MASS
 #' @import doMC
 #' @export
-dream <- function(prior, pdf, nc, t, d,
+dream_test <- function(prior, pdf, nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, checkConvergence = FALSE, verbose = TRUE, DEBUG = FALSE) {
+                  beta0 = 1, thin = 1, checkConvergence = FALSE, ncores = 1, verbose = TRUE, DEBUG = FALSE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -91,6 +94,8 @@ dream <- function(prior, pdf, nc, t, d,
 
 
   ### Initialisations ###
+  # register cores
+  registerDoMC(ncores)
 
   # track processing time
   timea <- Sys.time()
@@ -156,13 +161,103 @@ dream <- function(prior, pdf, nc, t, d,
 
   ### helper functions for vectorisation ###
 
-  ## outlier detection and correction (DREAM-specific)
+## function generating the jumping distance for a specific chain
+  jump <- function(j, nc, x, d, CR, nCR, pCR, delta, p_g, beta0, DEBUG) {
+    # initialise
+    dx <- rep(0, d)
+
+    # prepare parameter subspace sampling (DREAM-specific extensin of DE-MC)
+    # select delta (equal selection probabilities)
+    D <- sample(1:delta, 1, replace = TRUE)
+    # extract a != b != j
+    # a <- R[draw[1:D]]
+    # b <- R[draw[(D+1):(D*2)]]
+    samp <- sample((1:nc)[-j], D*2, replace = FALSE)
+    a <- samp[1:D]
+    b <- samp[(D+1):(2*D)]
+    # index of crossover value
+    id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
+    # d values from U[0,1]
+    z <- runif(d)
+    # derive subset A of selected dimensions (parameters)
+    A <- which(z < CR[id])
+    # how many dimensions/parameters sampled?
+    d_star <- length(A)
+    # A needs one value at least
+    if(d_star == 0) {
+      A <- which.min(z)
+      d_star <- 1
+    }
+    # draw lambda values (as stated in text instead of Algorithm 5/6)
+    lambda <- runif(d_star, min = -c_val, max = c_val)
+
+    # jump rate
+    gamma_d <- 2.38/sqrt(2*D*d_star)
+    # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
+    g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
+
+    # small random disturbance
+    zeta <- rnorm(d_star, sd=c_star)
+
+    # jump differential
+    jump_diff <- colSums(x[a,A, drop=F] - x[b,A, drop=F])
+
+    # compute jump (differential evolution) for parameter subset
+    dx[A] <- zeta + (1+lambda) * g * jump_diff
+    # adjust jumping distance if desired
+    dx[A] <- dx[A] * beta0
+
+    # output
+    output <- list(dx = dx, id = id)
+    if(DEBUG) {
+      lambda_t <- rep(0, d)
+      lambda_t[A] <- lambda
+      zeta_t <- rep(0, d)
+      zeta_t[A] <- zeta
+      jump_diff_t <- rep(0, d)
+      jump_diff_t[A] <- jump_diff
+      output[["DEBUG"]] <- list(gamma = g, lambda = lambda_t, zeta = zeta_t, jump_diff = jump_diff_t)
+    }
+    return(output)
+  } # EOF jump
+
+## function for pdf evaluation and acceptance/rejection of proposal
+  stepfun <- function(prop, x_last, p_last, std_x) {
+
+    # calculate density at proposal
+    p_prop <- pdf(prop)
+
+    # probability of acceptance (Metropolis acceptance ratio)
+    # p_acc <- min(1, p_prop/p_last)
+    p_acc <- min(max(-100, p_prop - p_last), 0)
+    if(p_acc > log(runif(1))) { # larger than sample point from U[0,1]?
+      out_prop <- prop # accept candidate parameters
+      out_p_prop <- p_prop # accept density accordingly
+      acc <- 1 # accpected
+    } else {
+      # retain previous values
+      out_prop <- x_last
+      out_p_prop <- p_last
+      acc <- 0 # rejected
+    }
+
+    # jump distance (euclidean distance of parameter moves)
+    dJ <- sum(((out_prop - x_last)/std_x)^2)
+
+    # output
+    return(list(xt = out_prop,
+                p_xt = out_p_prop,
+                dJ = dJ,
+                acc = acc))
+  } # EOF stepfun
+
+## outlier detection and correction (DREAM-specific)
   check_outlier <- function(dens, x, N) {
     # mean log density of second half of chain samples as proxy for fitness of each chain
     proxy <- colMeans( dens )
     # calculate the Inter Quartile Range statistic (IQR method) of the chains
     quartiles <- quantile(proxy, probs = c(0.25,0.75))
-    iqr <- abs(diff(quartiles))
+    iqr <- diff(quartiles)
     # identify outlier chains
     outliers <- which(proxy < quartiles[1] - 2*iqr)
     # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
@@ -189,95 +284,53 @@ dream <- function(prior, pdf, nc, t, d,
     if (verbose)
       setTxtProgressBar(pb, i)
 
-    # loop over chains
-    for (j in 1:nc) {
-      # initialise jump vector
-      dx <- rep(0, d)
+    # generate jump
+    jump_out <- lapply(1:nc, function(j) jump(j, nc, xt, d, CR, nCR, pCR, delta, p_g, beta0, DEBUG))
+    dx <- t(sapply(jump_out, function(x) x$dx))
+    if(d == 1)
+      dx <- t(dx)
+    id <- sapply(jump_out, function(x) x$id)
 
-      ## sub-space of chain pairs
-      # number of chain pairs to be used to calculate jump (equal selection probabilities)
-      D <- sample(1:delta, 1, replace = TRUE)
-      # sample chains for jump calculation: a != b != j
-      samp <- sample((1:nc)[-j], D*2, replace = FALSE)
-      a <- samp[1:D]
-      b <- samp[(D+1):(2*D)]
-
-      ## parameter sub-space
-      # index of crossover value
-      id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
-      # d values from U[0,1]
-      z <- runif(d)
-      # derive subset A of selected dimensions (parameters)
-      A <- which(z < CR[id])
-      # how many dimensions/parameters sampled?
-      d_star <- length(A)
-      # A needs one value at least
-      if(d_star == 0) {
-        A <- which.min(z)
-        d_star <- 1
-      }
-
-      ## calculate proposal by differential evolution
-      # draw lambda values (as stated in text instead of Algorithm 5/6)
-      lambda <- runif(d_star, min = -c_val, max = c_val)
-      # jump rate
-      gamma_d <- 2.38/sqrt(2*D*d_star)
-      # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
-      g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
-      # small random disturbance
-      zeta <- rnorm(d_star, sd=c_star)
-      # jump differential
-      jump_diff <- colSums(xt[a,A, drop=F] - xt[b,A, drop=F])
-      # compute jump (differential evolution) for parameter subset
-      dx[A] <- zeta + (1+lambda) * g * jump_diff
-      # adjust jumping distance if desired
-      dx[A] <- dx[A] * beta0
-      if(DEBUG) dx_prop <- dx # for monitoring
-      # proposal
-      xp <- xt[j,] + dx
-
-      ## accept or reject proposal
-      # calculate log-density at proposal
-      p_xp <- pdf(xp)
-      # probability of acceptance (Metropolis acceptance ratio)
-      p_acc <- min(max(-100, p_xp - p_x[i-1,j]), 0)
-      if(p_acc > log(runif(1))) { # larger than sample point from U[0,1]?
-        xt[j,] <- xp # accept candidate parameters
-        p_x[i,j] <- p_xp # accept density accordingly
-        n_acc[id] <- n_acc[id] + 1 # accpected
-      } else {
-        p_x[i,j] <-  p_x[i-1,j] # retain previous value
-        dx <- 0
-      }
-
-      ## auxiliary variables
-      n_id[id] <- n_id[id] + 1 # no. of times id was used
-      std_x <- apply(xt, 2, sd) # sd among chains
-      J[id] <- J[id] + sum((dx/std_x)^2)  # monitoring of Euclidean jump distances
-
-      ## DEBUG
-      if(DEBUG) {
-        out_dx[i,j,] <- dx_prop
-        out_dx_eff[i,j,] <- dx
-        out_lambda[i,j,] <- rep(0, d)
-        out_lambda[i,j,A] <- lambda
-        out_zeta[i,j,] <- rep(0, d)
-        out_zeta[i,j,A] <- zeta
-        out_jumpdiff[i,j,] <- rep(0, d)
-        out_jumpdiff[i,j,A] <- jump_diff
-        out_gamma[i,j] <- g
-      }
-
-    } # loop over nc
-
-
-    ## DEBUG
     if(DEBUG) {
-      out_J[i,] <- J
-      out_std[i,] <- std_x
+      out_gamma[i,] <- sapply(jump_out, function(x) x$DEBUG$gamma)
+      if (d==1) {
+        out_lambda[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$lambda)))
+        out_zeta[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$zeta)))
+        out_jumpdiff[i,,] <- t(t(sapply(jump_out, function(x) x$DEBUG$jump_diff)))
+      } else {
+        out_lambda[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$lambda))
+        out_zeta[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$zeta))
+        out_jumpdiff[i,,] <- t(sapply(jump_out, function(x) x$DEBUG$jump_diff))
+      }
     }
 
-    ## store for output (respect burn-in period and possible output thinning)
+    # calculate proposal
+    xp <- xt + dx
+
+    if(DEBUG) xt_prev <- xt # DEBUG
+
+    # std within a chain for each parameter do calculate euclidean jump distance
+    std_x <- apply(xt, 2, sd)
+
+    # function evaluation and proposal acceptance/rejection
+    if (ncores > 1)
+      step_out <- foreach(j=1:nc) %dopar% stepfun(xp[j,], xt[j,], p_x[i-1,j], std_x)
+    else
+      step_out <- lapply(1:nc, function(j) stepfun(xp[j,], xt[j,], p_x[i-1,j], std_x))
+    # distribute calculated values to variables
+    xt <- t(sapply(step_out, function(x) x$xt))
+    if(d == 1)
+      xt <- t(xt)
+    p_x[i,] <- sapply(step_out, function(x) x$p_xt)
+    dJ_t <- sapply(step_out, function(x) x$dJ)
+    acc_t <- sapply(step_out, function(x) x$acc)
+    for (h in 1:length(id)) {
+      J[id[h]] <- J[id[h]] + dJ_t[h]
+      n_id[id[h]] <- n_id[id[h]] + 1 # how many times crossover of id used?
+      n_acc[id[h]] <- n_acc[id[h]] + acc_t[h] # how many times a proposal was accpected?
+    }
+
+    # store for output (respect burn-in period and possible output thinning)
     if( (i > (burnin*t)) && (i %% thin == 0) ) {
       ind_out <- ind_out + 1
 
@@ -293,7 +346,7 @@ dream <- function(prior, pdf, nc, t, d,
         out_rstat[ind_out-50,] <- R_stat(out_x[1:ind_out,,, drop = F])
     }
 
-    ## during adaptation period
+    # during adaptation period
     if (i <= (adapt*t)) {
       if (i%%updateInterval == 0) {
         # update selection probability of crossover by jump distance following Vrugt, 2016 instead of Vrugt et al., 2009 (different results?!)
@@ -303,14 +356,22 @@ dream <- function(prior, pdf, nc, t, d,
           pCR[which(is.nan(pCR))] <- 1/nCR # if a specific n_id is zero, i.e. was not yet used
           pCR <- pCR/sum(pCR)
         }
+      }
 
-        # check for outliers and correct them
-        check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
-        xt <- check_out$xt
-        p_x[i,] <- check_out$p_x
-        outl[[i]] <- check_out$outliers
-      } # update interval
-    } # adaptation period
+      # check for outliers and correct them
+      check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
+      xt <- check_out$xt
+      p_x[i,] <- check_out$p_x
+      outl[[i]] <- check_out$outliers
+    }
+
+    # DEBUG
+    if(DEBUG) {
+      out_J[i,] <- J
+      out_dx[i,,] <- dx
+      out_dx_eff[i,,] <- xt - xt_prev
+      out_std[i,] <- std_x
+    }
 
   } #  end chain processing
 
