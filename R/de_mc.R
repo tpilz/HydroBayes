@@ -34,17 +34,8 @@ de_mc <- function(prior, pdf, nc, t, d) {
   x[1,,] <- t(prior(nc,d))
   p_x[1,] <- pdf(t(x[1,,]))
 
-  # R-Matrix: index of chains for DE
-  R <- array(NaN, dim=c(nc, nc-1))
-  nc_t <- 1:nc
-  for(i in 1:nc) R[i, 1:(nc-1)] <- nc_t[which(nc_t != i)]
-
   # evolution of nc chains
   for(i in 2:t) {
-    # permute [1, ..., nc-1] nc times (to draw parameters a and b randomly later on)
-    draw <- replicate(nc, sample(c(1:(nc-1)),2))
-    # select jump rate gamma: weighted random sample of gamma_RWM or 1 with probabilities 0.9 and 0.1, respectively
-    g <- sample(x = c(gamma_RWM, 1), size = 1, replace = TRUE, prob = c(0.9, 0.1))
 
     # initialise chains for current i based on i-1
     x[i,,] <- x[i-1,,]
@@ -55,6 +46,9 @@ de_mc <- function(prior, pdf, nc, t, d) {
       sam <- sample((1:nc)[-j], 2, replace = FALSE)
       a <- sam[1]
       b <- sam[2]
+
+      # select jump rate gamma: weighted random sample of gamma_RWM or 1 with probabilities 0.9 and 0.1, respectively
+      g <- sample(x = c(gamma_RWM, 1), size = 1, replace = TRUE, prob = c(0.9, 0.1))
 
       # create proposal via differential evolution
       xp <- x[i,,j] + g * (x[i,,a] - x[i,,b]) + rnorm(d, sd=1e-6)
