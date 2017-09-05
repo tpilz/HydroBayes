@@ -27,8 +27,8 @@ HydroModel <- function(forcing,param){
 
   # Apply linear store equation
   for (i in 1:length(forcing)) {
-    S_Dt <- (forcing[i] * Dt + S0) / (1+K*Dt)
-    Y[i] <- K*S_Dt
+    S_Dt <- (forcing[i] * Dt + S0) / (1+param*Dt)
+    Y[i] <- param*S_Dt
     S0 <- S_Dt
   }
 
