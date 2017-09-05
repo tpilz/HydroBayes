@@ -238,7 +238,7 @@ dream <- function(prior, pdf, nc, t, d,
 
       ## accept or reject proposal
       # calculate log-density at proposal
-      p_xp <- pdf(xp)
+      p_xp <- pdf(matrix(xp, ncol=d))
       # probability of acceptance (Metropolis acceptance ratio)
       p_acc <- min(max(-100, p_xp - p_x[i-1,j]), 0)
       if(p_acc > log(runif(1))) { # larger than sample point from U[0,1]?
