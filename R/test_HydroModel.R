@@ -23,7 +23,7 @@ HydroModel <- function(forcing,param){
   # Initials
   Dt <- 1
   S0 <- 1
-  Y=rep(NaN, length(X))
+  Y=rep(NaN, length(forcing))
 
   # Apply linear store equation
   for (i in 1:length(forcing)) {
