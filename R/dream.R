@@ -1,8 +1,20 @@
 #' Differential Evolution Adaptive Metropolis (DREAM) algorithm
-#' @param prior A function(N,d) that draws N samples from a d-variate prior distribution.
-#' Returns an N-by-d matrix.
-#' @param pdf A function(prior) that calculates the log-density of the target distribution for given prior.
-#' Returns an N-variate vector.
+#' @param fun \code{character}. Name of a function(x, ...) that returns the log-pdf value at x with x being a
+#' d-dimensional parameter vector.
+#' @param ... Additional arguments for \code{fun}.
+#' @param par.info A \code{list} characterising the prior sampling.
+#' @param initial \code{character}. Method for prior sampling. One of: uniform - sampling from a uniform distribution;
+#' normal - a (multivariate) normal distribution; latin - latin hypercube sampling; user - value(s) given by the user.
+#' @param min \code{numeric}. A d-dimensional vector of minimum values for each parameter to sample from if
+#' \code{initial} is 'uniform' or 'latin'. Also defines bounding region for the proposal, see \code{bound}.
+#' @param max \code{numeric}. A d-dimensional vector of maximum values for each parameter to sample from if
+#' \code{initial} is 'uniform' or 'latin'. Also defines bounding region for the proposal, see \code{bound}.
+#' @param mu \code{numeric}. d-dimensional vector of parameter means if \code{initial} is 'normal'.
+#' @param cov \code{numeric}. d-by-d positive-definite symmetric matrix of parameter covariances if
+#' \code{initial} is 'normal'.
+#' @param val_ini \code{numeric} nc-by-d-dimensional matrix of prior values if \code{initial} is 'user'.
+#' @param bound \code{character}. What to do if the proposal parameter is outside the defined min-max limits.
+#' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.
 #' @param nc \code{numeric}. Number of chains evolved in parallel.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
@@ -21,6 +33,9 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
+#' @param keep_sim \code{logical}. Shall simulations generated with \code{fun} be returned in the output list?
+#' If \code{TRUE}, \code{fun} needs to return a list with elements 'lp' (the log posterior density) and 'sim'
+#' (the simulation time series). Default: FALSE.
 #' @param checkConvergence \code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 #' Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.
 #' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
@@ -41,10 +56,17 @@
 #' (first element is NA due to computational reasons);
 #'
 #' \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
-#' (first element is NA due to computational reasons);
+#' (first element is NA due to computational reasons).
 #'
-#' \emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
-#' (note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
+#' IF keep_sim == TRUE:
+#'
+#' \emph{fun_sim}: a (1-burnin)*t/thin-by-k-by-nc array of simulation time series (length k) generated with
+#' \code{fun} coresponding to the parameter realisations of output element \emph{chain}.
+#'
+#' IF checkConvergence == TRUE:
+#'
+#' \emph{R_stat}: a (1-burnin)*t/thin-50+1-by-d matrix giving the Gelman-Rubin convergence diagnostic
+#' (note that at least 50 observations are used to compute R_stat).
 #'
 #' IF DEBUG == TRUE:
 #'
@@ -80,10 +102,13 @@
 #'
 #' @import MASS
 #' @import doMC
+#' @import lhs
 #' @export
-dream <- function(prior, pdf, nc, t, d,
+dream <- function(fun, ...,
+                  par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL),
+                  nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, checkConvergence = FALSE, verbose = TRUE, DEBUG = FALSE) {
+                  beta0 = 1, thin = 1, keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE, DEBUG = FALSE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
@@ -95,8 +120,14 @@ dream <- function(prior, pdf, nc, t, d,
   # track processing time
   timea <- Sys.time()
 
+  # number of lines for the output: depends on burnin and thin whereas the prior will always occur
+  if(burnin > 0 || thin > 1)
+    out_t <- (1-burnin)*t/thin + 1
+  else
+    out_t <- (1-burnin)*t/thin
+
   # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
-  out_x <- array(NaN, dim=c((1-burnin)*t/thin,d,nc))
+  out_x <- array(NaN, dim=c(out_t,d,nc))
   p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
@@ -110,28 +141,47 @@ dream <- function(prior, pdf, nc, t, d,
   pCR <- rep(1, nCR)/nCR
 
   # initialize chains by sampling from prior
-  xt <- prior(nc,d)
-  if(!is.matrix(xt)) # if d=1
+  if(par.info$initial == "uniform") {
+    xt <- sapply(1:d, function(i) runif(nc, min = par.info$min[i], max = par.info$max[i]))
+  } else if(par.info$initial == "normal") {
+    xt <- mvrnorm(nc, mu = par.info$mu, Sigma = par.info$cov)
+  } else if(par.info$initial == "latin") {
+    lhs_sample <- randomLHS(nc, d)
+    xt <- sapply(1:d, function(i) qunif(lhs_sample[,i], min = par.info$min[i], max = par.info$max[i]))
+  } else if(par.info$initial == "user") {
+    xt <- par.info$val_ini
+  } else {
+    stop("Value 'initial' of argument list 'par.info' must be one of {'uniform', 'normal', 'latin', 'user'}!")
+  }
+  if(!is.matrix(xt))
     xt <- matrix(xt, ncol=d)
-  p_x[1,] <- pdf(xt)
 
-  xp <- array(NA, dim = c(nc, d))
+  # evaluate fun for prior value
+  if(keep_sim) {
+    res_t <- apply(xt, 1, function(i) get(fun)(i, ...))
+    p_x[1,] <- sapply(res_t, function(z) z$lp)
+    out_sim_t <- sapply(res_t, function(z) z$sim)
+    # allocate array to store simulation results of fun
+    out_sim <- array(NA, dim=c(out_t, nrow(out_sim_t), nc))
+    # allocate matrix to store last accepted simulations (for case of proposal rejection and thinning is applied)
+    last_acc_sim <- array(NA, dim=c(nrow(out_sim_t), nc))
+    # store simulation results
+    out_sim[1,,] <- out_sim_t
+    last_acc_sim <- out_sim_t
+  } else {
+    p_x[1,] <- apply(xt, 1, function(i) get(fun)(i, ...))
+  }
 
   # auxiliary variables
-  out_AR <- out_CR <- array(NA, dim = c((1-burnin)*t/thin, nCR))
+  out_AR <- out_CR <- array(NA, dim = c(out_t, nCR))
   if(checkConvergence)
-    out_rstat <- array(NA, dim = c((1-burnin)*t/thin-50, d))
-  else
-    out_rstat <- NULL
+    out_rstat <- array(NA, dim = c(out_t-50, d))
   outl <- list(NULL)
-  ind_out <- 0
+  ind_out <- 1
 
-  if(burnin == 0 && 1 %% thin == 0) {
-    out_x[1,,] <- t(xt)
-    out_AR[1,] <- rep(0,3)
-    out_CR[1,] <- pCR
-    ind_out <- ind_out+1
-  }
+  out_x[1,,] <- t(xt)
+  out_AR[1,] <- rep(0,3)
+  out_CR[1,] <- pCR
 
   # DEBUG
   if(DEBUG) {
@@ -175,6 +225,21 @@ dream <- function(prior, pdf, nc, t, d,
     return(list(xt = x, p_x = dens[nrow(dens),], outliers = outliers))
   } # EOF check_outlier
 
+  ## check parameter boundary and adjust parameter if necessary
+  bound_par <- function(par, min, max, handle) {
+    par_out <- par
+    if(!is.null(min) && !is.null(max) && !is.null(handle)) {
+      if(par < min || par > max) {
+        if(handle == "bound") {
+          par_out <- max(min(par, par.info$max), par.info$min)
+        } else {
+          stop("Value 'bound' of argument list 'par.info' must be one of {'bound'}!")
+        }
+      }
+    }
+    return(par_out)
+  }
+
 
 
   ### Algorithm ###
@@ -188,6 +253,9 @@ dream <- function(prior, pdf, nc, t, d,
     # next progress message
     if (verbose)
       setTxtProgressBar(pb, i)
+    # index to store output
+    if( (i > (burnin*t)) && (i %% thin == 0) )
+      ind_out <- ind_out + 1
 
     # loop over chains
     for (j in 1:nc) {
@@ -236,18 +304,40 @@ dream <- function(prior, pdf, nc, t, d,
       # proposal
       xp <- xt[j,] + dx
 
+      ## check and adjust parameters
+      xp <- sapply(1:d, function(k) bound_par(xp[k], min = par.info$min[k], max = par.info$max[k], handle = par.info$bound))
+
       ## accept or reject proposal
       # calculate log-density at proposal
-      p_xp <- pdf(matrix(xp, ncol=d))
+      if(keep_sim) {
+        # store log-pdf and simulation results
+        res_t <- get(fun)(xp, ...)
+        p_xp <- res_t$lp
+        out_sim_t <- res_t$sim
+      } else {
+        p_xp <- get(fun)(xp, ...)
+      }
       # probability of acceptance (Metropolis acceptance ratio)
       p_acc <- min(max(-100, p_xp - p_x[i-1,j]), 0)
       if(p_acc > log(runif(1))) { # larger than sample point from U[0,1]?
+
+        dx <- xp - xt[j,] # if parameter was adjusted during boundary handling
         xt[j,] <- xp # accept candidate parameters
         p_x[i,j] <- p_xp # accept density accordingly
         n_acc[id] <- n_acc[id] + 1 # accpected
-      } else {
+        if(keep_sim) {
+          last_acc_sim[,j] <- out_sim_t # always store last accepted simulation
+          if( (i > (burnin*t)) && (i %% thin == 0) )
+            out_sim[ind_out,,j] <- out_sim_t
+        }
+
+      } else { # proposal rejected
+
         p_x[i,j] <-  p_x[i-1,j] # retain previous value
+        if(keep_sim && (i > (burnin*t)) && (i %% thin == 0))
+          out_sim[ind_out,,j] <- last_acc_sim[,j] # get last accepted simulation
         dx <- 0
+
       }
 
       ## auxiliary variables
@@ -279,8 +369,6 @@ dream <- function(prior, pdf, nc, t, d,
 
     ## store for output (respect burn-in period and possible output thinning)
     if( (i > (burnin*t)) && (i %% thin == 0) ) {
-      ind_out <- ind_out + 1
-
       # chain states
       out_x[ind_out,,] <- t(xt)
 
@@ -323,12 +411,17 @@ dream <- function(prior, pdf, nc, t, d,
 
   # prepare output
   output <- list(chain = out_x,
-                 density = p_x[seq(burnin*t+thin, t, by=thin),],
+                 density = p_x[c(1, seq(burnin*t+thin, t, by=thin)),],
                  runtime = timeb - timea,
                  outlier = outl,
                  AR = out_AR,
-                 CR = out_CR,
-                 R_stat = out_rstat)
+                 CR = out_CR)
+
+  if(keep_sim)
+    output[["fun_sim"]] <- out_sim
+
+  if(checkConvergence)
+    output[["R_stat"]] <- out_rstat
 
   if(DEBUG)
     output[["DEBUG"]] <- list(J = out_J,

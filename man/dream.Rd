@@ -4,17 +4,20 @@
 \alias{dream}
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
-dream(prior, pdf, nc, t, d, burnin = 0, adapt = 0.1, updateInterval = 10,
-  delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-  beta0 = 1, thin = 1, checkConvergence = FALSE, verbose = TRUE,
+dream(fun, ..., par.info = list(initial = NULL, min = NULL, max = NULL, mu =
+  NULL, cov = NULL, val_ini = NULL, bound = NULL), nc, t, d, burnin = 0,
+  adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1,
+  c_star = 1e-12, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
+  keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE,
   DEBUG = FALSE)
 }
 \arguments{
-\item{prior}{A function(N,d) that draws N samples from a d-variate prior distribution.
-Returns an N-by-d matrix.}
+\item{fun}{\code{character}. Name of a function(x, ...) that returns the log-pdf value at x with x being a
+d-dimensional parameter vector.}
 
-\item{pdf}{A function(prior) that calculates the log-density of the target distribution for given prior.
-Returns an N-variate vector.}
+\item{...}{Additional arguments for \code{fun}.}
+
+\item{par.info}{A \code{list} characterising the prior sampling.}
 
 \item{nc}{\code{numeric}. Number of chains evolved in parallel.}
 
@@ -47,6 +50,10 @@ the replacement of outlier chains. Default: 0.1.}
 
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
 
+\item{keep_sim}{\code{logical}. Shall simulations generated with \code{fun} be returned in the output list?
+If \code{TRUE}, \code{fun} needs to return a list with elements 'lp' (the log posterior density) and 'sim'
+(the simulation time series). Default: FALSE.}
+
 \item{checkConvergence}{\code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.}
 
@@ -54,6 +61,25 @@ Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.}
 
 \item{DEBUG}{\code{logical}. Option enables further output for error and/or more in-depth analysis.
 See below. Default: FALSE.}
+
+\item{initial}{\code{character}. Method for prior sampling. One of: uniform - sampling from a uniform distribution;
+normal - a (multivariate) normal distribution; latin - latin hypercube sampling; user - value(s) given by the user.}
+
+\item{min}{\code{numeric}. A d-dimensional vector of minimum values for each parameter to sample from if
+\code{initial} is 'uniform' or 'latin'. Also defines bounding region for the proposal, see \code{bound}.}
+
+\item{max}{\code{numeric}. A d-dimensional vector of maximum values for each parameter to sample from if
+\code{initial} is 'uniform' or 'latin'. Also defines bounding region for the proposal, see \code{bound}.}
+
+\item{mu}{\code{numeric}. d-dimensional vector of parameter means if \code{initial} is 'normal'.}
+
+\item{cov}{\code{numeric}. d-by-d positive-definite symmetric matrix of parameter covariances if
+\code{initial} is 'normal'.}
+
+\item{val_ini}{\code{numeric} nc-by-d-dimensional matrix of prior values if \code{initial} is 'user'.}
+
+\item{bound}{\code{character}. What to do if the proposal parameter is outside the defined min-max limits.
+One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.}
 }
 \value{
 \code{list} with named elements:
@@ -70,10 +96,17 @@ See below. Default: FALSE.}
 (first element is NA due to computational reasons);
 
 \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
-(first element is NA due to computational reasons);
+(first element is NA due to computational reasons).
 
-\emph{R_stat}: if \code{checkConvergence == T} a (1-burnin)*t/thin-50-by-d matrix giving the Gelman-Rubin convergence diagnostic
-(note that at least 50 observations are used to compute R_stat). Otherwise \code{NULL}.
+IF keep_sim == TRUE:
+
+\emph{fun_sim}: a (1-burnin)*t/thin-by-k-by-nc array of simulation time series (length k) generated with
+\code{fun} coresponding to the parameter realisations of output element \emph{chain}.
+
+IF checkConvergence == TRUE:
+
+\emph{R_stat}: a (1-burnin)*t/thin-50+1-by-d matrix giving the Gelman-Rubin convergence diagnostic
+(note that at least 50 observations are used to compute R_stat).
 
 IF DEBUG == TRUE:
 
