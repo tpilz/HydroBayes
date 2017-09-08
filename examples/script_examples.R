@@ -119,7 +119,7 @@ plot(1:dim(res$chain)[1], res$chain[,,1], type="n", ylab="x", xlab="Sample of Ma
 for (i in 1:dim(res$chain)[3])
   points(1:dim(res$chain)[1], res$chain[,,i], pch=i, col=i)
 
-savePlot("Sect5_1_Fig7.png", type="png")
+savePlot("Sect5_1_Fig7_chains_parallel.png", type="png")
 
 # DEBUG
 par(mfrow=c(10,1), mar=c(2,5,0,0))
@@ -237,11 +237,11 @@ savePlot("Sect5_1_Fig7_BayesianTools_detailed.png", type="png")
 ## Test simple hydrological model
 fun_wrap <- function(x, forc, obs) {
   # evaluate hydro model
-  res <- HydroModel(forcing = forc, param = x[1])
+  res <- HydroModel(forcing = forc, param = x["K"])
   if(any(is.na(res)))
     stop("NA in res of fun detected!")
   # calculate log-likelihood of the observations given the model results
-  lkh <- sum( dnorm(obs, mean = res, sd = x[2], log = TRUE) )
+  lkh <- sum( dnorm(obs, mean = res, sd = x["sigma"], log = TRUE) )
   # calculate posterior log-pdf ~ lkh (for non-informative prior)
   post <- lkh
   # return in normal space
@@ -262,7 +262,7 @@ t <- 1000
 burnin=0.1
 set.seed(1312)
 res <- dream(fun = "fun_wrap", forc = precip[calib], obs = q_meas[calib],
-             par.info = list(initial = "normal", min = rep(0.0001,2), max = rep(1000,2), mu=c(1,5), cov=matrix(c(0.1,0,0,0.5), ncol=2, byrow = T), bound = "bound"),
+             par.info = list(initial = "normal", min = rep(0.0001,2), max = rep(1000,2), mu=c(1,5), cov=matrix(c(0.1,0,0,0.5), ncol=2, byrow = T), bound = "bound", names = c("K", "sigma")),
              nc = nc, t = t, d = d, burnin = burnin, adapt = 0.1, beta0 = 1, thin = 1, keep_sim = T)
 
 # traceplots

@@ -15,6 +15,8 @@
 #' @param val_ini \code{numeric} nc-by-d-dimensional matrix of prior values if \code{initial} is 'user'.
 #' @param bound \code{character}. What to do if the proposal parameter is outside the defined min-max limits.
 #' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.
+#' @param names \code{character} vector of length d with names for the parameters. These can be used within \code{fun}
+#' (in this case, parameter input x of \code{fun} is a named vector) and will appear in the output list element 'chain'.
 #' @param nc \code{numeric}. Number of chains evolved in parallel.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
@@ -105,7 +107,7 @@
 #' @import lhs
 #' @export
 dream <- function(fun, ...,
-                  par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL),
+                  par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL, names = NULL),
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
                   beta0 = 1, thin = 1, keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE, DEBUG = FALSE) {
@@ -128,6 +130,8 @@ dream <- function(fun, ...,
 
   # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
   out_x <- array(NaN, dim=c(out_t,d,nc))
+  if(!is.null(par.info$names))
+    dimnames(out_x) <- list(NULL, par.info$names, NULL)
   p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
@@ -155,6 +159,8 @@ dream <- function(fun, ...,
   }
   if(!is.matrix(xt))
     xt <- matrix(xt, ncol=d)
+  if(!is.null(par.info$names))
+    colnames(xt) <- par.info$names
 
   # evaluate fun for prior value
   if(keep_sim) {
@@ -248,6 +254,8 @@ dream <- function(fun, ...,
   if(verbose)
     pb <- txtProgressBar(min = 2, max = t, style = 3)
 
+  # xp <- array(NA, dim = c(nc, d))
+
   # evolution of nc chains
   for(i in 2:t) {
     # next progress message
@@ -307,6 +315,9 @@ dream <- function(fun, ...,
       ## check and adjust parameters
       xp <- sapply(1:d, function(k) bound_par(xp[k], min = par.info$min[k], max = par.info$max[k], handle = par.info$bound))
 
+    # }
+    #
+    # for (j in 1:nc) {
       ## accept or reject proposal
       # calculate log-density at proposal
       if(keep_sim) {

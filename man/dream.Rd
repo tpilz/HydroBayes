@@ -5,10 +5,10 @@
 \title{Differential Evolution Adaptive Metropolis (DREAM) algorithm}
 \usage{
 dream(fun, ..., par.info = list(initial = NULL, min = NULL, max = NULL, mu =
-  NULL, cov = NULL, val_ini = NULL, bound = NULL), nc, t, d, burnin = 0,
-  adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1,
-  c_star = 1e-12, nCR = 3, p_g = 0.2, beta0 = 1, thin = 1,
-  keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE,
+  NULL, cov = NULL, val_ini = NULL, bound = NULL, names = NULL), nc, t, d,
+  burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3,
+  c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2, beta0 = 1,
+  thin = 1, keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE,
   DEBUG = FALSE)
 }
 \arguments{
@@ -80,6 +80,9 @@ normal - a (multivariate) normal distribution; latin - latin hypercube sampling;
 
 \item{bound}{\code{character}. What to do if the proposal parameter is outside the defined min-max limits.
 One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.}
+
+\item{names}{\code{character} vector of length d with names for the parameters. These can be used within \code{fun}
+(in this case, parameter input x of \code{fun} is a named vector) and will appear in the output list element 'chain'.}
 }
 \value{
 \code{list} with named elements:
