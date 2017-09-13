@@ -42,13 +42,14 @@
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
 #' @param obs \code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
-#' realisations of \code{lik}.
+#' realisations of \code{lik} (see details).
 #' @param abc_rho \code{character}. Name of an ABC distance function(sim, obs) calculating the distance between
 #' simulated ('sim', output of \code{fun}) and observed (\code{obs}) diagnostic values. Needed for ABC methods of
 #' \code{lik}.
 #' @param abc_e \code{numeric} vector of length of \code{obs} specifying the ABC tolerance value (\code{lik = 22})
 #' or representing the standard deviations for each summary statistics (e.g. streamflow signatures) returned
 #' by \code{fun} (\code{lik = 21}).
+#' @param glue_shape \code{numeric} scalar value used for GLUE-based informal likelihood functions (see details).
 #' @param checkConvergence \code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 #' Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.
 #' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
@@ -91,6 +92,9 @@
 #' to be compared with observations. Requires arguments \code{obs}, \code{abc_rho}, and \code{abc_e}. Modification
 #' in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 2014).
 #'
+#' 31: GLUE with informal likelihood function based on the NSE: \code{glue_shape * log(NSE)}. \code{fun} needs to
+#' return a time series of model simulations and \code{obs} should contain a time series of corresponding observations.
+#'
 #' @references Code based on 'Algorithm 5' and 'Algorithm 6' of:
 #'
 #' Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
@@ -113,7 +117,7 @@ dream <- function(fun, ..., lik = NULL,
                                   bound = NULL, names = NULL, prior = "uniform"),
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
-                  p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL,
+                  p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL,
                   checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
@@ -162,7 +166,7 @@ dream <- function(fun, ..., lik = NULL,
   fx <- array(NA, dim = c(out_t, nc, ncol(res_fun)))
 
   # calculate log-likelihood
-  ll <- apply(res_fun, 1, calc_ll, lik = lik, obs = obs, abc_rho = abc_rho, abc_e = abc_e)
+  ll <- apply(res_fun, 1, calc_ll, lik = lik, obs = obs, abc_rho = abc_rho, abc_e = abc_e, glue_shape = glue_shape)
 
   # calculate posterior log-density
   lpost <- array(NA, dim = c(t,nc)) # monitor all lpost values for outlier identification
@@ -206,7 +210,7 @@ dream <- function(fun, ..., lik = NULL,
       res_fun_t <- get(fun)(xp, ...)
 
       # calculate log-likelihood
-      ll_xp <- calc_ll(res_fun_t, lik, obs, abc_rho, abc_e)
+      ll_xp <- calc_ll(res_fun_t, lik, obs, abc_rho, abc_e, glue_shape)
 
       # calculate posterior log-density
       lpost_xp <- lp_xp + ll_xp

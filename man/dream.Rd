@@ -9,8 +9,8 @@ dream(fun, ..., lik = NULL, par.info = list(initial = NULL, min = NULL, max
   prior = "uniform"), nc, t, d, burnin = 0, adapt = 0.1,
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
   nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
-  abc_rho = NULL, abc_e = NULL, checkConvergence = FALSE,
-  verbose = TRUE)
+  abc_rho = NULL, abc_e = NULL, glue_shape = NULL,
+  checkConvergence = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{fun}{\code{character}. Name of a function(x, ...) which is evaluated at x being a
@@ -55,14 +55,17 @@ the replacement of outlier chains. Default: 0.1.}
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
 
 \item{obs}{\code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
-realisations of \code{lik}.}
+realisations of \code{lik} (see details).}
 
 \item{abc_rho}{\code{character}. Name of an ABC distance function(sim, obs) calculating the distance between
 simulated ('sim', output of \code{fun}) and observed (\code{obs}) diagnostic values. Needed for ABC methods of
 \code{lik}.}
 
 \item{abc_e}{\code{numeric} vector of length of \code{obs} specifying the ABC tolerance value (\code{lik = 22})
-or scalar value defining the width of the fitness kernel (\code{lik = 21}).}
+or representing the standard deviations for each summary statistics (e.g. streamflow signatures) returned
+by \code{fun} (\code{lik = 21}).}
+
+\item{glue_shape}{\code{numeric} scalar value used for GLUE-based informal likelihood functions (see details).}
 
 \item{checkConvergence}{\code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.}
@@ -138,6 +141,9 @@ Likelihood options (argument \code{lik}):
 22: ABC diagnostic model evaluation using a Boxcar likelihood. \code{fun} has to return m diagnostic values
 to be compared with observations. Requires arguments \code{obs}, \code{abc_rho}, and \code{abc_e}. Modification
 in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 2014).
+
+31: GLUE with informal likelihood function based on the NSE: \code{glue_shape * log(NSE)}. \code{fun} needs to
+return a time series of model simulations and \code{obs} should contain a time series of corresponding observations.
 }
 \references{
 Code based on 'Algorithm 5' and 'Algorithm 6' of:
