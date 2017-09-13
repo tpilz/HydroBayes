@@ -9,7 +9,7 @@ dream(fun, ..., lik = NULL, par.info = list(initial = NULL, min = NULL, max
   prior = "uniform"), nc, t, d, burnin = 0, adapt = 0.1,
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
   nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
-  abc_rho = NULL, abc_e = NULL, glue_shape = NULL,
+  abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
   checkConvergence = FALSE, verbose = TRUE)
 }
 \arguments{
@@ -66,6 +66,9 @@ or representing the standard deviations for each summary statistics (e.g. stream
 by \code{fun} (\code{lik = 21}).}
 
 \item{glue_shape}{\code{numeric} scalar value used for GLUE-based informal likelihood functions (see details).}
+
+\item{lik_fun}{\code{character} specifying the name of a user-defined likelihood function(sim, obs) with sim
+being the output of \code{fun} and obs a vector of corresponding observations (argument \code{obs} above).}
 
 \item{checkConvergence}{\code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.}
@@ -144,6 +147,12 @@ in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 20
 
 31: GLUE with informal likelihood function based on the NSE: \code{glue_shape * log(NSE)}. \code{fun} needs to
 return a time series of model simulations and \code{obs} should contain a time series of corresponding observations.
+
+99: A user-defined function, see argument \code{lik_fun}.
+}
+\note{
+If you want to use a non-implemented likelihood function with nuisance variables to be calibrated along
+with the actual model parameters, it is suggested to implement the likelihood calculation directly into \code{fun}.
 }
 \references{
 Code based on 'Algorithm 5' and 'Algorithm 6' of:

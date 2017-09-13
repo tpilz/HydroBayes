@@ -1,6 +1,6 @@
 # This file contains several internally used functions
 
-calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape) {
+calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape, lik_fun) {
   if(lik == 1) {
     out <- log(res)
   } else if(lik == 2) {
@@ -12,6 +12,8 @@ calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape) {
     out <- min(abc_e - get(abc_rho)(res, obs)) # largest deviation of the distance value from tolerance counts
   } else if(lik == 31) {
     out <- glue_shape * log( max(1 - sum((res-obs)^2) / sum((obs-mean(obs))^2), 0) )
+  } else if(lik == 99) {
+    out <- get(lik_fun)(res, obs)
   } else stop("Argument 'lik' has to be one of {1,2,21,22}!")
   return(out)
 }
