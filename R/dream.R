@@ -1,8 +1,10 @@
 #' Differential Evolution Adaptive Metropolis (DREAM) algorithm
-#' @param fun \code{character}. Name of a function(x, ...) that returns the log-pdf value at x with x being a
-#' d-dimensional parameter vector.
+#' @param fun \code{character}. Name of a function(x, ...) which is evaluated at x being a
+#' d-dimensional parameter vector. Returns a likelihood, log-likelihood, simulation values or summary statistics
+#' depending on argument \code{lik}.
 #' @param ... Additional arguments for \code{fun}.
-#' @param par.info A \code{list} characterising the prior sampling.
+#' @param lik \code{integer}. Flag specifying a likelihood function to be used, see details.
+#' @param par.info A \code{list} of parameter information.
 #' @param initial \code{character}. Method for prior sampling. One of: uniform - sampling from a uniform distribution;
 #' normal - a (multivariate) normal distribution; latin - latin hypercube sampling; user - value(s) given by the user.
 #' @param min \code{numeric}. A d-dimensional vector of minimum values for each parameter to sample from if
@@ -17,6 +19,10 @@
 #' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.
 #' @param names \code{character} vector of length d with names for the parameters. These can be used within \code{fun}
 #' (in this case, parameter input x of \code{fun} is a named vector) and will appear in the output list element 'chain'.
+#' @param prior \code{character} specifying the prior pdf. One of: 'uniform' (prior is assumed to be uniformly distributed between
+#' \code{min} and \code{max}, i.e. non-informative); 'normal' (prior assumed to be normally distributed with \code{mu}
+#' and \code{cov}); name of a user-defined function(x) with x being a d-dimensional parameter vector and returning
+#' the log-density of the d-variate prior distribution at x.
 #' @param nc \code{numeric}. Number of chains evolved in parallel.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
@@ -35,22 +41,27 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
-#' @param keep_sim \code{logical}. Shall simulations generated with \code{fun} be returned in the output list?
-#' If \code{TRUE}, \code{fun} needs to return a list with elements 'lp' (the log posterior density) and 'sim'
-#' (the simulation time series). Default: FALSE.
+#' @param obs \code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
+#' realisations of \code{lik}.
+#' @param abc_rho \code{character}. Name of an ABC distance function(sim, obs) calculating the distance between
+#' simulated ('sim', output of \code{fun}) and observed (\code{obs}) diagnostic values. Needed for ABC methods of
+#' \code{lik}.
+#' @param abc_e \code{numeric} vector of length of \code{obs} specifying the ABC tolerance value (\code{lik = 22})
+#' or representing the standard deviations for each summary statistics (e.g. streamflow signatures) returned
+#' by \code{fun} (\code{lik = 21}).
 #' @param checkConvergence \code{logical}. Shall convergence of the MCMC chain be checked? Currently implemented:
 #' Calculating the Gelman-Rubin diagnostic. Takes a lot of time! Default: FALSE.
 #' @param verbose \code{logical}. Print progress bar to console? Default: TRUE.
-#' @param DEBUG \code{logical}. Option enables further output for error and/or more in-depth analysis.
-#' See below. Default: FALSE.
 #'
 #' @return \code{list} with named elements:
 #'
-#' \emph{chain}: a (1-burnin)*t/thin-by-d-by-nc array of parameter realisations for each iteration and Markov chain;
+#' \emph{chain}: a (1-burnin)*t/thin-by-d+3-by-nc array of parameter realisations and the log-pdfs of the prior ('lp'),
+#' likelihood ('ll'), and posterior ('lpost') distribution for each iteration and Markov chain;
 #'
-#' \emph{density}: a (1-burnin)*t/thin-by-nc matrix of log-densities computed by \code{pdf} at each iteration for each Markov chain;
+#' \emph{fx}: a (1-burnin)*t/thin-by-nc-by-[length of \code{fun}'s output] array of raw output of \code{fun},
+#' corresponds with parameter realisations in chain;
 #'
-#' \emph{runtime}: time of function execution in seconds;
+#' \emph{runtime}: time of function execution;
 #'
 #' \emph{outlier}: a list with adapt*t vectors of outlier indices in nc (value of 0 means no outliers);
 #'
@@ -60,39 +71,25 @@
 #' \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
 #' (first element is NA due to computational reasons).
 #'
-#' IF keep_sim == TRUE:
-#'
-#' \emph{fun_sim}: a (1-burnin)*t/thin-by-k-by-nc array of simulation time series (length k) generated with
-#' \code{fun} coresponding to the parameter realisations of output element \emph{chain}.
-#'
 #' IF checkConvergence == TRUE:
 #'
 #' \emph{R_stat}: a (1-burnin)*t/thin-50+1-by-d matrix giving the Gelman-Rubin convergence diagnostic
 #' (note that at least 50 observations are used to compute R_stat).
 #'
-#' IF DEBUG == TRUE:
-#'
-#' \emph{DEBUG}: a list with the elements:
-#'
-#' \emph{J}: a t-by-nCR matrix of cumulated Euclidean jump distances during the Markov chain progressing;
-#'
-#' \emph{dx}: a t-by-nc-by-d array of jump proposals;
-#'
-#' \emph{dx_eff}: a t-by-nc-by-d array of accepted jumps;
-#'
-#' \emph{std}: a t-by-d matrix of standard deviations of the chain for each parameter.
-#' Note: J_i = J_i-1 + sum( (dx_eff_i/std_i)^2 );
-#'
-#' \emph{gamma}: a t-by-nc matrix of jump rate values;
-#'
-#' \emph{lambda}: a t-by-nc-by-d array of lambda values;
-#'
-#' \emph{zeta}: a t-by-nc-by-d array of zeta values;
-#'
-#' \emph{jump_diff}: a t-by-nc-by-d array of jump differentials ( sum(X_a - X_b) ).
-#'
 #' @details To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
 #' of the reference paper (see below).
+#'
+#' Likelihood options (argument \code{lik}):
+#'
+#' 1: \code{fun} returns the likelihood of parameter realisation x given some observations.
+#'
+#' 2: \code{fun} returns the log-likelihood.
+#'
+#' 21: ABC diagnostic model evaluation using a continuous fitness kernel, a variation of so-called noisy-ABC.
+#'
+#' 22: ABC diagnostic model evaluation using a Boxcar likelihood. \code{fun} has to return m diagnostic values
+#' to be compared with observations. Requires arguments \code{obs}, \code{abc_rho}, and \code{abc_e}. Modification
+#' in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 2014).
 #'
 #' @references Code based on 'Algorithm 5' and 'Algorithm 6' of:
 #'
@@ -100,39 +97,31 @@
 #' Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,
 #' \url{http://dx.doi.org/10.1016/j.envsoft.2015.08.013}.
 #'
+#' For ABC method see:
+#'
+#' Sadegh, M. and J. A. Vrugt: "Approximate Bayesian computation using Markov Chain Monte Carlo simulation:
+#' DREAM_ABC". Water Resources Research, 2014, 50, 6767 -- 6787, \url{http://dx.doi.org/10.1002/2014WR015386}.
+#'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
 #' @import MASS
 #' @import doMC
 #' @import lhs
 #' @export
-dream <- function(fun, ...,
-                  par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL, names = NULL),
+dream <- function(fun, ..., lik = NULL,
+                  par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL,
+                                  bound = NULL, names = NULL, prior = "uniform"),
                   nc, t, d,
-                  burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3, p_g = 0.2,
-                  beta0 = 1, thin = 1, keep_sim = FALSE, checkConvergence = FALSE, verbose = TRUE, DEBUG = FALSE) {
+                  burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
+                  p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL,
+                  checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
   if(nc <= delta*2)
     stop("Argument 'nc' must be > 'delta' * 2!")
 
-
-  ### Initialisations ###
-
   # track processing time
   timea <- Sys.time()
-
-  # number of lines for the output: depends on burnin and thin whereas the prior will always occur
-  if(burnin > 0 || thin > 1)
-    out_t <- (1-burnin)*t/thin + 1
-  else
-    out_t <- (1-burnin)*t/thin
-
-  # allocate chains (respecting thin) and density (all samples for outlier calculation) for output
-  out_x <- array(NaN, dim=c(out_t,d,nc))
-  if(!is.null(par.info$names))
-    dimnames(out_x) <- list(NULL, par.info$names, NULL)
-  p_x <- array(NaN, dim=c(t,nc))
 
   # Variables for crossover probability selection and acceptance monitoring
   J <- n_id <- n_acc <- rep(0, nCR)
@@ -144,120 +133,58 @@ dream <- function(fun, ...,
   CR <- c(1:nCR)/nCR
   pCR <- rep(1, nCR)/nCR
 
-  # initialize chains by sampling from prior
-  if(par.info$initial == "uniform") {
-    xt <- sapply(1:d, function(i) runif(nc, min = par.info$min[i], max = par.info$max[i]))
-  } else if(par.info$initial == "normal") {
-    xt <- mvrnorm(nc, mu = par.info$mu, Sigma = par.info$cov)
-  } else if(par.info$initial == "latin") {
-    lhs_sample <- randomLHS(nc, d)
-    xt <- sapply(1:d, function(i) qunif(lhs_sample[,i], min = par.info$min[i], max = par.info$max[i]))
-  } else if(par.info$initial == "user") {
-    xt <- par.info$val_ini
-  } else {
-    stop("Value 'initial' of argument list 'par.info' must be one of {'uniform', 'normal', 'latin', 'user'}!")
-  }
-  if(!is.matrix(xt))
-    xt <- matrix(xt, ncol=d)
-  if(!is.null(par.info$names))
-    colnames(xt) <- par.info$names
+  # number of lines for the diagnostic output: depends on burnin and thin whereas the prior will always occur
+  if(burnin > 0 || thin > 1)
+    out_t <- (1-burnin)*t/thin + 1
+  else
+    out_t <- t
 
-  # evaluate fun for prior value
-  if(keep_sim) {
-    res_t <- apply(xt, 1, function(i) get(fun)(i, ...))
-    p_x[1,] <- sapply(res_t, function(z) z$lp)
-    out_sim_t <- sapply(res_t, function(z) z$sim)
-    # allocate array to store simulation results of fun
-    out_sim <- array(NA, dim=c(out_t, nrow(out_sim_t), nc))
-    # allocate matrix to store last accepted simulations (for case of proposal rejection and thinning is applied)
-    last_acc_sim <- array(NA, dim=c(nrow(out_sim_t), nc))
-    # store simulation results
-    out_sim[1,,] <- out_sim_t
-    last_acc_sim <- out_sim_t
-  } else {
-    p_x[1,] <- apply(xt, 1, function(i) get(fun)(i, ...))
-  }
-
-  # auxiliary variables
+  # initialise output variables
+  chain <- array(NA, dim = c(out_t, d + 3, nc))
+  parnames <- if(is.null(par.info$names)) paste0("par", 1:d) else par.info$names
+  dimnames(chain) <- list(NULL, c(parnames, "lp", "ll", "lpost"), NULL)
   out_AR <- out_CR <- array(NA, dim = c(out_t, nCR))
   if(checkConvergence)
     out_rstat <- array(NA, dim = c(out_t-50, d))
   outl <- list(NULL)
-  ind_out <- 1
 
-  out_x[1,,] <- t(xt)
+  # sample from prior
+  xt <- prior_sample(par.info, d, nc)
+  # calculate prior log-density
+  lp <- apply(xt, 1, prior_pdf, par.info = par.info, lik = lik)
+
+  # evaluate fun for prior value
+  res_fun <- apply(xt, 1, function(i) get(fun)(i, ...))
+  if(!is.matrix(res_fun)) res_fun <- t(res_fun)
+  res_fun <- t(res_fun)
+
+  # output variable to collect (raw) function output
+  fx <- array(NA, dim = c(out_t, nc, ncol(res_fun)))
+
+  # calculate log-likelihood
+  ll <- apply(res_fun, 1, calc_ll, lik = lik, obs = obs, abc_rho = abc_rho, abc_e = abc_e)
+
+  # calculate posterior log-density
+  lpost <- array(NA, dim = c(t,nc)) # monitor all lpost values for outlier identification
+  lpost[1,] <- lp + ll
+
+  # write into output variables
+  chain[1,1:d,] <- t(xt)
+  chain[1,"lp",] <- lp
+  chain[1,"ll",] <- ll
+  chain[1,"lpost",] <- lpost[1,]
   out_AR[1,] <- rep(0,3)
   out_CR[1,] <- pCR
-
-  # DEBUG
-  if(DEBUG) {
-    out_J <- array(NA, dim=c(t, nCR))
-    out_J[1,] <- J
-    out_dx <- array(NA, dim=c(t, nc, d))
-    out_dx[1,,] <- 0
-    out_dx_eff <- array(NA, dim=c(t, nc, d))
-    out_dx_eff[1,,] <- 0
-    out_std <- array(NA, dim=c(t, d))
-    out_std[1,] <- 0
-    out_gamma <- array(NA, dim=c(t,nc))
-    out_gamma[1,] <- 0
-    out_lambda <- array(NA, dim=c(t, nc, d))
-    out_lambda[1,,] <- 0
-    out_zeta <- array(NA, dim=c(t, nc, d))
-    out_zeta[1,,] <- 0
-    out_jumpdiff <- array(NA, dim=c(t, nc, d))
-    out_jumpdiff[1,,] <- 0
-  }
-
-
-  ### helper functions for vectorisation ###
-
-  ## outlier detection and correction (DREAM-specific)
-  check_outlier <- function(dens, x, N) {
-    # mean log density of second half of chain samples as proxy for fitness of each chain
-    proxy <- colMeans( dens )
-    # calculate the Inter Quartile Range statistic (IQR method) of the chains
-    quartiles <- quantile(proxy, probs = c(0.25,0.75))
-    iqr <- abs(diff(quartiles))
-    # identify outlier chains
-    outliers <- which(proxy < quartiles[1] - 2*iqr)
-    # outlier chains take state of one of the other chains (randomly sampled as in Vrugt, 2016 instead of best chain as in Vrugt et al., 2009)
-    if(length(outliers) > 0) {
-      new_states <- sample((1:N)[-outliers], length(outliers), replace = FALSE)
-      x[outliers,] <- x[new_states,]
-      dens[nrow(dens),outliers] <- dens[nrow(dens),new_states]
-    }
-    # output
-    return(list(xt = x, p_x = dens[nrow(dens),], outliers = outliers))
-  } # EOF check_outlier
-
-  ## check parameter boundary and adjust parameter if necessary
-  bound_par <- function(par, min, max, handle) {
-    par_out <- par
-    if(!is.null(min) && !is.null(max) && !is.null(handle)) {
-      if(par < min || par > max) {
-        if(handle == "bound") {
-          par_out <- max(min(par, par.info$max), par.info$min)
-        } else {
-          stop("Value 'bound' of argument list 'par.info' must be one of {'bound'}!")
-        }
-      }
-    }
-    return(par_out)
-  }
-
-
-
-  ### Algorithm ###
+  fx[1,,] <- res_fun
+  ind_out <- 1
 
   # progress indicator
   if(verbose)
     pb <- txtProgressBar(min = 2, max = t, style = 3)
 
-  # xp <- array(NA, dim = c(nc, d))
-
   # evolution of nc chains
   for(i in 2:t) {
+
     # next progress message
     if (verbose)
       setTxtProgressBar(pb, i)
@@ -267,121 +194,56 @@ dream <- function(fun, ...,
 
     # loop over chains
     for (j in 1:nc) {
-      # initialise jump vector
-      dx <- rep(0, d)
 
-      ## sub-space of chain pairs
-      # number of chain pairs to be used to calculate jump (equal selection probabilities)
-      D <- sample(1:delta, 1, replace = TRUE)
-      # sample chains for jump calculation: a != b != j
-      samp <- sample((1:nc)[-j], D*2, replace = FALSE)
-      a <- samp[1:D]
-      b <- samp[(D+1):(2*D)]
-
-      ## parameter sub-space
-      # index of crossover value
-      id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
-      # d values from U[0,1]
-      z <- runif(d)
-      # derive subset A of selected dimensions (parameters)
-      A <- which(z < CR[id])
-      # how many dimensions/parameters sampled?
-      d_star <- length(A)
-      # A needs one value at least
-      if(d_star == 0) {
-        A <- which.min(z)
-        d_star <- 1
-      }
-
-      ## calculate proposal by differential evolution
-      # draw lambda values (as stated in text instead of Algorithm 5/6)
-      lambda <- runif(d_star, min = -c_val, max = c_val)
-      # jump rate
-      gamma_d <- 2.38/sqrt(2*D*d_star)
-      # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
-      g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
-      # small random disturbance
-      zeta <- rnorm(d_star, sd=c_star)
-      # jump differential
-      jump_diff <- colSums(xt[a,A, drop=F] - xt[b,A, drop=F])
-      # compute jump (differential evolution) for parameter subset
-      dx[A] <- zeta + (1+lambda) * g * jump_diff
-      # adjust jumping distance if desired
-      dx[A] <- dx[A] * beta0
-      if(DEBUG) dx_prop <- dx # for monitoring
       # proposal
-      xp <- xt[j,] + dx
+      res_t <- calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info)
+      xp <- res_t$xp
+      id_t <- res_t$id
+      # calculate prior log-density
+      lp_xp <- prior_pdf(xp, par.info, lik)
 
-      ## check and adjust parameters
-      xp <- sapply(1:d, function(k) bound_par(xp[k], min = par.info$min[k], max = par.info$max[k], handle = par.info$bound))
+      # evaluate fun for prior value
+      res_fun_t <- get(fun)(xp, ...)
 
-    # }
-    #
-    # for (j in 1:nc) {
-      ## accept or reject proposal
-      # calculate log-density at proposal
-      if(keep_sim) {
-        # store log-pdf and simulation results
-        res_t <- get(fun)(xp, ...)
-        p_xp <- res_t$lp
-        out_sim_t <- res_t$sim
-      } else {
-        p_xp <- get(fun)(xp, ...)
-      }
-      # probability of acceptance (Metropolis acceptance ratio)
-      p_acc <- min(max(-100, p_xp - p_x[i-1,j]), 0)
-      if(p_acc > log(runif(1))) { # larger than sample point from U[0,1]?
+      # calculate log-likelihood
+      ll_xp <- calc_ll(res_fun_t, lik, obs, abc_rho, abc_e)
 
-        dx <- xp - xt[j,] # if parameter was adjusted during boundary handling
+      # calculate posterior log-density
+      lpost_xp <- lp_xp + ll_xp
+
+      # Metropolis acceptance
+      accept <- metropolis_acceptance(lpost_xp, lpost[i-1,j], lik)
+
+      if(accept) { # proposal is accepted
+        dx <- xp - xt[j,]
         xt[j,] <- xp # accept candidate parameters
-        p_x[i,j] <- p_xp # accept density accordingly
-        n_acc[id] <- n_acc[id] + 1 # accpected
-        if(keep_sim) {
-          last_acc_sim[,j] <- out_sim_t # always store last accepted simulation
-          if( (i > (burnin*t)) && (i %% thin == 0) )
-            out_sim[ind_out,,j] <- out_sim_t
-        }
-
-      } else { # proposal rejected
-
-        p_x[i,j] <-  p_x[i-1,j] # retain previous value
-        if(keep_sim && (i > (burnin*t)) && (i %% thin == 0))
-          out_sim[ind_out,,j] <- last_acc_sim[,j] # get last accepted simulation
+        lp[j] <- lp_xp # prior density
+        ll[j] <- ll_xp # likelihood
+        lpost[i,j] <- lpost_xp # accept density accordingly
+        res_fun[j,] <- res_fun_t # raw function output
+        n_acc[id_t] <- n_acc[id_t] + 1 # accpected
+      } else { # proposal is rejected
+        lpost[i,j] <- lpost[i-1,j]
         dx <- 0
-
       }
 
       ## auxiliary variables
-      n_id[id] <- n_id[id] + 1 # no. of times id was used
+      n_id[id_t] <- n_id[id_t] + 1 # no. of times id was used
       std_x <- apply(xt, 2, sd) # sd among chains
-      J[id] <- J[id] + sum((dx/std_x)^2)  # monitoring of Euclidean jump distances
-
-      ## DEBUG
-      if(DEBUG) {
-        out_dx[i,j,] <- dx_prop
-        out_dx_eff[i,j,] <- dx
-        out_lambda[i,j,] <- rep(0, d)
-        out_lambda[i,j,A] <- lambda
-        out_zeta[i,j,] <- rep(0, d)
-        out_zeta[i,j,A] <- zeta
-        out_jumpdiff[i,j,] <- rep(0, d)
-        out_jumpdiff[i,j,A] <- jump_diff
-        out_gamma[i,j] <- g
-      }
+      J[id_t] <- J[id_t] + sum((dx/std_x)^2)  # monitoring of Euclidean jump distances
 
     } # loop over nc
-
-
-    ## DEBUG
-    if(DEBUG) {
-      out_J[i,] <- J
-      out_std[i,] <- std_x
-    }
 
     ## store for output (respect burn-in period and possible output thinning)
     if( (i > (burnin*t)) && (i %% thin == 0) ) {
       # chain states
-      out_x[ind_out,,] <- t(xt)
+      chain[ind_out,1:d,] <- t(xt)
+      chain[ind_out,"lp",] <- lp
+      chain[ind_out,"ll",] <- ll
+      chain[ind_out,"lpost",] <- lpost[i,]
+
+      # function output
+      fx[ind_out,,] <- res_fun
 
       # AR and CR
       out_AR[ind_out,] <- n_acc/n_id
@@ -404,9 +266,9 @@ dream <- function(fun, ...,
         }
 
         # check for outliers and correct them
-        check_out <- check_outlier(p_x[ceiling(i/2):i, ], xt, nc)
+        check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
         xt <- check_out$xt
-        p_x[i,] <- check_out$p_x
+        lpost[i,] <- check_out$p_x
         outl[[i]] <- check_out$outliers
       } # update interval
     } # adaptation period
@@ -421,29 +283,15 @@ dream <- function(fun, ...,
   timeb <- Sys.time()
 
   # prepare output
-  output <- list(chain = out_x,
-                 density = p_x[c(1, seq(burnin*t+thin, t, by=thin)),],
+  output <- list(chain = chain,
+                 fx = fx,
                  runtime = timeb - timea,
                  outlier = outl,
                  AR = out_AR,
                  CR = out_CR)
 
-  if(keep_sim)
-    output[["fun_sim"]] <- out_sim
-
   if(checkConvergence)
     output[["R_stat"]] <- out_rstat
-
-  if(DEBUG)
-    output[["DEBUG"]] <- list(J = out_J,
-                              dx = out_dx,
-                              dx_eff = out_dx_eff,
-                              std = out_std,
-                              gamma = out_gamma,
-                              lambda = out_lambda,
-                              zeta = out_zeta,
-                              jump_diff = out_jumpdiff)
-
 
   return(output)
 } # EOF
