@@ -143,10 +143,12 @@ Likelihood options (argument \code{lik}):
 
 22: ABC diagnostic model evaluation using a Boxcar likelihood. \code{fun} has to return m diagnostic values
 to be compared with observations. Requires arguments \code{obs}, \code{abc_rho}, and \code{abc_e}. Modification
-in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 2014).
+in computation of Metropolis probability is used (Eq. 13 of Sadegh and Vrugt, 2014). Prior pdf set to zero!
 
 31: GLUE with informal likelihood function based on the NSE: \code{glue_shape * log(NSE)}. \code{fun} needs to
 return a time series of model simulations and \code{obs} should contain a time series of corresponding observations.
+\code{glue_shape} affects the sampling: small values result in high parameter uncertainty, large values produce
+narrow posterior pdfs of parameters. Should be in the range of 1-100 (experiment!).
 
 99: A user-defined function, see argument \code{lik_fun}.
 }
