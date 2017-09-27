@@ -10,7 +10,8 @@ dream_parallel(fun, ..., lik = NULL, par.info = list(initial = NULL, min =
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
   nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
   abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-  ncores = 1, checkConvergence = FALSE, verbose = TRUE)
+  past_sample = FALSE, m0 = NULL, archive_update = NULL, ncores = 1,
+  checkConvergence = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{fun}{\code{character}. Name of a function(x, ...) which is evaluated at x being a
@@ -69,6 +70,16 @@ by \code{fun} (\code{lik = 21}).}
 
 \item{lik_fun}{\code{character} specifying the name of a user-defined likelihood function(sim, obs) with sim
 being the output of \code{fun} and obs a vector of corresponding observations (argument \code{obs} above).}
+
+\item{past_sample}{\code{logical}. Shall proposal generation by sampling from past states be applied
+(i.e., DREAM(zs))? Default: \code{FALSE}.}
+
+\item{m0}{\code{integer}. The initial archive size (needed if \code{past_sample == TRUE}). Default: \code{NULL}
+(if \code{past_sample == TRUE} and \code{is.null(m0)} it will be set to \code{10*d}).}
+
+\item{archive_update}{\code{integer}. Update the archive by appending the current state of each Markov chain
+at every [\code{archive_update}]th iteration. Default: \code{NULL} (if \code{past_sample == TRUE} and
+\code{is.null(archive_update)} it will be set to 10).}
 
 \item{ncores}{\code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very
@@ -131,7 +142,8 @@ IF checkConvergence == TRUE:
 (note that at least 50 observations are used to compute R_stat).
 }
 \description{
-Differential Evolution Adaptive Metropolis (DREAM) algorithm
+Implementation of the DREAM algorithm, including variations (such as DREAM(zs) and DEAM(ABC))
+depending on certain argument settings.
 }
 \details{
 To understand the notation (e.g. what is lambda, nCR etc.), have a look at Sect. 3.3
@@ -161,7 +173,7 @@ If you want to use a non-implemented likelihood function with nuisance variables
 with the actual model parameters, it is suggested to implement the likelihood calculation directly into \code{fun}.
 }
 \references{
-Code based on 'Algorithm 5' and 'Algorithm 6' of:
+Code based on:
 
 Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,

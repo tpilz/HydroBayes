@@ -1,4 +1,8 @@
 #' Differential Evolution Adaptive Metropolis (DREAM) algorithm
+#'
+#' Implementation of the DREAM algorithm, including variations (such as DREAM(zs) and DEAM(ABC))
+#' depending on certain argument settings.
+#'
 #' @param fun \code{character}. Name of a function(x, ...) which is evaluated at x being a
 #' d-dimensional parameter vector. Returns a likelihood, log-likelihood, simulation values or summary statistics
 #' depending on argument \code{lik}.
@@ -52,6 +56,13 @@
 #' @param glue_shape \code{numeric} scalar value used for GLUE-based informal likelihood functions (see details).
 #' @param lik_fun \code{character} specifying the name of a user-defined likelihood function(sim, obs) with sim
 #' being the output of \code{fun} and obs a vector of corresponding observations (argument \code{obs} above).
+#' @param past_sample \code{logical}. Shall proposal generation by sampling from past states be applied
+#' (i.e., DREAM(zs))? Default: \code{FALSE}.
+#' @param m0 \code{integer}. The initial archive size (needed if \code{past_sample == TRUE}). Default: \code{NULL}
+#' (if \code{past_sample == TRUE} and \code{is.null(m0)} it will be set to \code{10*d}).
+#' @param archive_update \code{integer}. Update the archive by appending the current state of each Markov chain
+#' at every [\code{archive_update}]th iteration. Default: \code{NULL} (if \code{past_sample == TRUE} and
+#' \code{is.null(archive_update)} it will be set to 10).
 #' @param ncores \code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 #' (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very
 #' complex and computational demanding, otherwise multiple thread handling will cause function slowdown! Default: 1.
@@ -107,7 +118,7 @@
 #' @note If you want to use a non-implemented likelihood function with nuisance variables to be calibrated along
 #' with the actual model parameters, it is suggested to implement the likelihood calculation directly into \code{fun}.
 #'
-#' @references Code based on 'Algorithm 5' and 'Algorithm 6' of:
+#' @references Code based on:
 #'
 #' Vrugt, J. A.: "Markov chain Monte Carlo simulation using the DREAM software package:
 #' Theory, concepts, and MATLAB implementation." Environmental Modelling & Software, 2016, 75, 273 -- 316,
@@ -131,11 +142,17 @@ dream_parallel <- function(fun, ..., lik = NULL,
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
                   p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-                  ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
+                  past_sample = FALSE, m0 = NULL, archive_update = NULL, ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
-  if(nc <= delta*2)
+  if(!past_sample && (nc <= delta*2) )
     stop("Argument 'nc' must be > 'delta' * 2!")
+  if(past_sample & is.null(m0))
+    m0 <- 10*d
+  if(!past_sample & is.null(m0))
+    m0 <- nc
+  if(past_sample & is.null(archive_update))
+    archive_update <- 10
   if(ncores > 1)
     registerDoMC(ncores)
 
@@ -167,8 +184,10 @@ dream_parallel <- function(fun, ..., lik = NULL,
     out_rstat <- array(NA, dim = c(out_t-50, d))
   outl <- list(NULL)
 
-  # sample from prior
-  xt <- prior_sample(par.info, d, nc)
+  # initialise archive: sample from prior
+  z <- prior_sample(par.info, d, m0)
+  # get current state of each chain from the archive (last nc samples)
+  xt <- z[(m0-nc+1):m0,, drop=F]
   # calculate prior log-density
   lp <- apply(xt, 1, prior_pdf, par.info = par.info, lik = lik)
 
@@ -224,7 +243,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
     ll <- rep(0, nc)
 
     # calculate proposals
-    res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info))
+    res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z))
     xp <- sapply(res_t, function(x) x$xp)
     if(!is.matrix(xp)) xp <- t(xp)
     xp <- t(xp) # nc-by-d as xt
@@ -268,6 +287,10 @@ dream_parallel <- function(fun, ..., lik = NULL,
     for(j in 1:nc) J[id[j]] <-  J[id[j]] + jump_dist[j]  # monitoring of jump distances
 
 
+    ## update archive
+    if( !is.null(archive_update) && (1 %% archive_update == 0) )
+      z <- rbind(xt, z)
+
     ## store for output (respect burn-in period and possible output thinning)
     if( (i > (burnin*t)) && (i %% thin == 0) ) {
       # chain states
@@ -300,11 +323,13 @@ dream_parallel <- function(fun, ..., lik = NULL,
           pCR <- pCR/sum(pCR)
         }
 
-        # check for outliers and correct them
-        check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
-        xt <- check_out$xt
-        lpost[i,] <- check_out$p_x
-        outl[[i]] <- check_out$outliers
+        # check for outliers and correct them (not if DREAM_zs, i.e. archive sampling is activated)
+        if(!past_sample) {
+          check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
+          xt <- check_out$xt
+          lpost[i,] <- check_out$p_x
+          outl[[i]] <- check_out$outliers
+        }
       } # update interval
     } # adaptation period
 

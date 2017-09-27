@@ -90,17 +90,29 @@ bound_par <- function(par, min, max, handle) {
   return(par_out)
 }
 
-calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info) {
+calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z) {
   # initialise jump dx
   dx <- rep(0, d)
 
   ## sub-space of chain pairs
   # number of chain pairs to be used to calculate jump (equal selection probabilities)
   D <- sample(1:delta, 1, replace = TRUE)
-  # sample chains for jump calculation: a != b != j
-  samp <- sample((1:nc)[-j], D*2, replace = FALSE)
-  a <- samp[1:D]
-  b <- samp[(D+1):(2*D)]
+  if(past_sample) {
+    # sample from state archive for jump calculation: a != b
+    samp <- sample(1:nrow(z), D*2, replace = FALSE)
+    a <- samp[1:D]
+    b <- samp[(D+1):(2*D)]
+    r1 <- z[a,, drop=F]
+    r2 <- z[b,, drop=F]
+  } else {
+    # sample from chains for jump calculation: a != b != j
+    samp <- sample((1:nc)[-j], D*2, replace = FALSE)
+    a <- samp[1:D]
+    b <- samp[(D+1):(2*D)]
+    r1 <- x[a,, drop=F]
+    r2 <- x[b,, drop=F]
+  }
+
 
   ## parameter sub-space
   # index of crossover value
@@ -126,7 +138,7 @@ calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta
   # small random disturbance
   zeta <- rnorm(d_star, sd=c_star)
   # jump differential
-  jump_diff <- colSums(x[a,A, drop=F] - x[b,A, drop=F])
+  jump_diff <- colSums(r1[,A, drop=F] - r2[,A, drop=F])
   # compute jump (differential evolution) for parameter subset
   dx[A] <- zeta + (1+lambda) * g * jump_diff
   # adjust jumping distance if desired
