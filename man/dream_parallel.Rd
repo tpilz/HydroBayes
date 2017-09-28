@@ -10,8 +10,8 @@ dream_parallel(fun, ..., lik = NULL, par.info = list(initial = NULL, min =
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
   nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
   abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-  past_sample = FALSE, m0 = NULL, archive_update = NULL, ncores = 1,
-  checkConvergence = FALSE, verbose = TRUE)
+  past_sample = FALSE, m0 = NULL, archive_update = NULL, psnooker = 0,
+  ncores = 1, checkConvergence = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{fun}{\code{character}. Name of a function(x, ...) which is evaluated at x being a
@@ -34,8 +34,9 @@ depending on argument \code{lik}.}
 These samples from the Markov chain will not be included in the output. Default: 0.}
 
 \item{adapt}{\code{numeric}. Length of the adaptation period as portion of t
-(\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities and
-the replacement of outlier chains. Default: 0.1.}
+(\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities (NB: useful
+if some parameter are correlated as they will get a higher chance of being updated jointly) and
+the replacement of outlier chains (NB: this can enhance convergence to the target distribution). Default: 0.1.}
 
 \item{updateInterval}{\code{integer}. Interval for crossover probability updates during the adaptation period.}
 
@@ -80,6 +81,11 @@ being the output of \code{fun} and obs a vector of corresponding observations (a
 \item{archive_update}{\code{integer}. Update the archive by appending the current state of each Markov chain
 at every [\code{archive_update}]th iteration. Default: \code{NULL} (if \code{past_sample == TRUE} and
 \code{is.null(archive_update)} it will be set to 10).}
+
+\item{psnooker}{\code{numeric} value giving the probability for a snooker (instead of the conventional parallel
+direction) jump. Might be useful for complex target distributions to enhance the diversity of proposals.
+In such a case, a recommended value is 0.1. Otherwise, leave it at zero to prevent snooker updates (the default).
+NOTE: Can only be applied if \code{past_sample == TRUE}!}
 
 \item{ncores}{\code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very

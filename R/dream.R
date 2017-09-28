@@ -209,7 +209,7 @@ dream <- function(fun, ..., lik = NULL,
     for (j in 1:nc) {
 
       # proposal
-      res_t <- calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample=F)
+      res_t <- calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample=F, psnooker=0)
       xp <- res_t$xp
       id_t <- res_t$id
       # calculate prior log-density

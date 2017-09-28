@@ -90,20 +90,31 @@ bound_par <- function(par, min, max, handle) {
   return(par_out)
 }
 
-calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z) {
-  # initialise jump dx
-  dx <- rep(0, d)
+calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker) {
+
+  # apply snooker or parallel direction update
+  snooker <- FALSE
+  if(runif(1) < psnooker) snooker <- TRUE
 
   ## sub-space of chain pairs
   # number of chain pairs to be used to calculate jump (equal selection probabilities)
   D <- sample(1:delta, 1, replace = TRUE)
   if(past_sample) {
-    # sample from state archive for jump calculation: a != b
-    samp <- sample(1:nrow(z), D*2, replace = FALSE)
-    a <- samp[1:D]
-    b <- samp[(D+1):(2*D)]
-    r1 <- z[a,, drop=F]
-    r2 <- z[b,, drop=F]
+    if(snooker) {
+      # snooker update
+      samp <- sample(1:nrow(z), 3, replace = FALSE)
+      r1 <- z[samp[1],]
+      r2 <- z[samp[2],]
+      r3 <- z[samp[3],]
+    } else {
+      # parallel direction update
+      # sample from state archive for jump calculation: a != b
+      samp <- sample(1:nrow(z), D*2, replace = FALSE)
+      a <- samp[1:D]
+      b <- samp[(D+1):(2*D)]
+      r1 <- z[a,, drop=F]
+      r2 <- z[b,, drop=F]
+    }
   } else {
     # sample from chains for jump calculation: a != b != j
     samp <- sample((1:nc)[-j], D*2, replace = FALSE)
@@ -114,35 +125,60 @@ calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta
   }
 
 
-  ## parameter sub-space
-  # index of crossover value
-  id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
-  # d values from U[0,1]
-  z <- runif(d)
-  # derive subset A of selected dimensions (parameters)
-  A <- which(z < CR[id])
-  # how many dimensions/parameters sampled?
-  d_star <- length(A)
-  # A needs one value at least
-  if(d_star == 0) {
-    A <- which.min(z)
-    d_star <- 1
+  if(past_sample && snooker) {
+    # index of crossover value
+    # TODO: not needed if snooker but unsure what to do as id is needed later on (introduced error should be negligible?!)
+    id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
+    ## calc jump as snooker update
+    # jump rate (according to ter Braak and Vrugt, 2008)
+    g <- runif(1, min = 1.2, max = 2.2)
+    # small random disturbance
+    zeta <- rnorm(d, sd=c_star)
+    # calculate projections of r2 and r3 to line  x - r1
+    rp2 <- orth_proj(x[j,], r1, r2)
+    rp3 <- orth_proj(x[j,], r1, r3)
+    # jump
+    dx <- zeta + g * (rp2-rp3)
+
+  } else {
+
+    ## parallel direction update
+    # initialise jump dx
+    dx <- rep(0, d)
+
+    ## parameter sub-space
+    # index of crossover value
+    id <- sample(1:nCR, 1, replace = TRUE, prob = pCR)
+    # d values from U[0,1]
+    zt <- runif(d)
+    # derive subset A of selected dimensions (parameters)
+    A <- which(zt < CR[id])
+    # how many dimensions/parameters sampled?
+    d_star <- length(A)
+    # A needs one value at least
+    if(d_star == 0) {
+      A <- which.min(zt)
+      d_star <- 1
+    }
+
+    ## jump
+    # draw lambda values (as stated in text instead of Algorithm 5/6)
+    lambda <- runif(d_star, min = -c_val, max = c_val)
+    # jump rate
+    gamma_d <- 2.38/sqrt(2*D*d_star)
+    # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
+    g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
+    # small random disturbance
+    zeta <- rnorm(d_star, sd=c_star)
+    # jump differential
+    jump_diff <- colSums(r1[,A, drop=F] - r2[,A, drop=F])
+    # compute jump (differential evolution) for parameter subset
+    dx[A] <- zeta + (1+lambda) * g * jump_diff
+    # adjust jumping distance if desired
+    dx[A] <- dx[A] * beta0
+
   }
 
-  # draw lambda values (as stated in text instead of Algorithm 5/6)
-  lambda <- runif(d_star, min = -c_val, max = c_val)
-  # jump rate
-  gamma_d <- 2.38/sqrt(2*D*d_star)
-  # select jump rate gamma: weighted random sample of gamma_d or 1 with probabilities 1-p_g and p_g, respectively
-  g <- sample(x = c(gamma_d, 1), size = 1, replace = TRUE, prob = c(1-p_g, p_g))
-  # small random disturbance
-  zeta <- rnorm(d_star, sd=c_star)
-  # jump differential
-  jump_diff <- colSums(r1[,A, drop=F] - r2[,A, drop=F])
-  # compute jump (differential evolution) for parameter subset
-  dx[A] <- zeta + (1+lambda) * g * jump_diff
-  # adjust jumping distance if desired
-  dx[A] <- dx[A] * beta0
 
   # proposal
   xp <- x[j,] + dx
@@ -168,4 +204,13 @@ metropolis_acceptance <- function(p_xp, p_x, lik) {
     accept <- p_acc > log(runif(1))
   }
   return(accept)
+}
+
+# calculates the prthogonal projection of point p to the line going through points a and b
+orth_proj <- function(a, b, p) {
+  # directional vector, i.e. the line between a and b
+  u <- a-b
+  # orthogonal projection (see analytical geometry basics)
+  q  <- a + u * sum((p-a)*u) / sum(u*u)
+  return(q)
 }

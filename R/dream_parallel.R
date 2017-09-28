@@ -33,8 +33,9 @@
 #' @param burnin \code{numeric}. Length of the burn-in period as portion of t (\code{burnin period = burnin * t}).
 #' These samples from the Markov chain will not be included in the output. Default: 0.
 #' @param adapt \code{numeric}. Length of the adaptation period as portion of t
-#' (\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities and
-#' the replacement of outlier chains. Default: 0.1.
+#' (\code{adaptation period = adapt * t}). Will be used for the update of crossover probabilities (NB: useful
+#' if some parameter are correlated as they will get a higher chance of being updated jointly) and
+#' the replacement of outlier chains (NB: this can enhance convergence to the target distribution). Default: 0.1.
 #' @param updateInterval \code{integer}. Interval for crossover probability updates during the adaptation period.
 #' @param delta \code{integer}. Maximum number of chain pairs used to generate the jump (default: 3).
 #' @param c_val \code{numeric}. Lambda value is sampled from U[-c_val,c_val] (default: 0.1).
@@ -63,6 +64,10 @@
 #' @param archive_update \code{integer}. Update the archive by appending the current state of each Markov chain
 #' at every [\code{archive_update}]th iteration. Default: \code{NULL} (if \code{past_sample == TRUE} and
 #' \code{is.null(archive_update)} it will be set to 10).
+#' @param psnooker \code{numeric} value giving the probability for a snooker (instead of the conventional parallel
+#' direction) jump. Might be useful for complex target distributions to enhance the diversity of proposals.
+#' In such a case, a recommended value is 0.1. Otherwise, leave it at zero to prevent snooker updates (the default).
+#' NOTE: Can only be applied if \code{past_sample == TRUE}!
 #' @param ncores \code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 #' (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very
 #' complex and computational demanding, otherwise multiple thread handling will cause function slowdown! Default: 1.
@@ -142,7 +147,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
                   p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-                  past_sample = FALSE, m0 = NULL, archive_update = NULL, ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
+                  past_sample = FALSE, m0 = NULL, archive_update = NULL, psnooker=0, ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
   if(!past_sample && (nc <= delta*2) )
@@ -243,7 +248,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
     ll <- rep(0, nc)
 
     # calculate proposals
-    res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z))
+    res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker))
     xp <- sapply(res_t, function(x) x$xp)
     if(!is.matrix(xp)) xp <- t(xp)
     xp <- t(xp) # nc-by-d as xt
