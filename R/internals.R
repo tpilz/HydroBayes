@@ -15,6 +15,10 @@ calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape, lik_fun) {
   } else if(lik == 99) {
     out <- get(lik_fun)(res, obs)
   } else stop("Argument 'lik' has to be one of {1,2,21,22}!")
+  # avoid non-finite values, set to very small value
+  out <- max(out, -100)
+  # check output
+  if(any(!is.finite(out))) stop("Calculated log-likelihood is non-finite values!")
   return(out)
 }
 
@@ -55,6 +59,10 @@ prior_pdf <- function(x, par.info, lik) {
       lp <- get(par.info$prior)(x)
     }
   }
+  # avoid non-finite values, set to very small value
+  lp <- max(lp, -100)
+  # check output
+  if(!is.finite(lp)) stop(paste0("Calculated log-prior is not finite: ", lp, "; x = ", x))
   return(lp)
 }
 
@@ -184,7 +192,10 @@ calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta
   xp <- x[j,] + dx
 
   # check and adjust proposal
-  xp <- sapply(1:d, function(k) bound_par(xp[k], min = par.info$min[k], max = par.info$max[k], handle = par.info$bound))
+  if(any(!is.finite(xp))) stop(paste0("Calculated proposal is not finite!", ifelse(snooker, " Snooker update was applied.", "")))
+  xp <- sapply(1:d, function(k) bound_par(xp[k], min = ifelse(length(par.info$min) > 1, par.info$min[k], par.info$min),
+                                                 max = ifelse(length(par.info$max) > 1, par.info$max[k], par.info$max),
+                                                 handle = par.info$bound))
   # make sure parameter names are retained
   if(!is.null(par.info$names)) names(xp) <- par.info$names
 
@@ -203,14 +214,22 @@ metropolis_acceptance <- function(p_xp, p_x, lik) {
     # accept or reject
     accept <- p_acc > log(runif(1))
   }
+  if(!is.finite(accept)) stop(paste0("Calculate Metropolis acceptance is not finite: ", accept, "; p_xp = ", p_xp, ", p_x = ", p_x))
   return(accept)
 }
 
 # calculates the prthogonal projection of point p to the line going through points a and b
 orth_proj <- function(a, b, p) {
-  # directional vector, i.e. the line between a and b
-  u <- a-b
-  # orthogonal projection (see analytical geometry basics)
-  q  <- a + u * sum((p-a)*u) / sum(u*u)
+  if (all(a == b)) {
+    q <- p
+  } else {
+    # directional vector, i.e. the line between a and b
+    u <- a-b
+    # orthogonal projection (see analytical geometry basics)
+    q  <- a + u * sum((p-a)*u) / sum(u*u)
+  }
+  # checkout output
+  if(any(!is.finite(q))) stop(paste0("Result of orthogonal projection is not finite: ", paste(q, collapse = ", "),
+                                     "; a = ", paste(a, collapse = ", "), ", b = ", paste(b, collapse = ", "), ", p = ", paste(p, collapse = ", ")))
   return(q)
 }
