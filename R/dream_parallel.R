@@ -244,8 +244,6 @@ dream_parallel <- function(fun, ..., lik = NULL,
       ind_out <- ind_out + 1
     # other initialisations
     dx <- array(0, dim=c(nc, d))
-    lp <- rep(0, nc)
-    ll <- rep(0, nc)
 
     # calculate proposals
     res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker))
@@ -274,19 +272,26 @@ dream_parallel <- function(fun, ..., lik = NULL,
 
     # Metropolis acceptance
     accept <- sapply(1:nc, function(j) metropolis_acceptance(lpost_xp[j], lpost[i-1,j], lik))
+    if(!is.vector(accept) && length(accept) != nc)
+      stop("Metropolis acceptance was not calculated as expected.")
     # update auxiliary variables
-    dx[accept,] <- xp[accept,] - xt[accept,] # jumped distance
-    xt[accept,] <- xp[accept,] # accept candidate parameters
-    lp[accept] <- lp_xp[accept] # prior density
-    ll[accept] <- ll_xp[accept] # likelihood
-    lpost[i,accept] <- lpost_xp[accept] # accept density accordingly
-    lpost[i,!accept] <- lpost[i-1,!accept] # keep former lpost value for rejected chains
-    res_fun[accept,] <- res_fun_t[accept,] # raw function output
+    if(any(accept)) {
+      dx[accept,] <- xp[accept,] - xt[accept,] # jumped distance
+      xt[accept,] <- xp[accept,] # accept candidate parameters
+      lp[accept] <- lp_xp[accept] # prior density
+      ll[accept] <- ll_xp[accept] # likelihood
+      lpost[i,accept] <- lpost_xp[accept] # accept density accordingly
+      res_fun[accept,] <- res_fun_t[accept,] # raw function output
+    }
+    if(any(!accept))
+      lpost[i,!accept] <- lpost[i-1,!accept] # keep former lpost value for rejected chains
 
     ids <- table(id) # count occurences of specific ids
     n_id[as.numeric(names(ids))] <- n_id[as.numeric(names(ids))] + ids # no. of times id was used
-    id_acc <- table(id[accept]) # count occurences of specific accepted ids
-    n_acc[as.numeric(names(id_acc))] <- n_acc[as.numeric(names(id_acc))] + id_acc # count acceptances per nCR
+    if(any(accept)) {
+      id_acc <- table(id[accept]) # count occurences of specific accepted ids
+      n_acc[as.numeric(names(id_acc))] <- n_acc[as.numeric(names(id_acc))] + id_acc # count acceptances per nCR
+    }
     std_x <- apply(xt, 2, sd) # sd among chains
     jump_dist <- apply(dx, 1, function(x) sum( (x/std_x)^2 )) # Euclidean jump distances
     for(j in 1:nc) J[id[j]] <-  J[id[j]] + jump_dist[j]  # monitoring of jump distances
