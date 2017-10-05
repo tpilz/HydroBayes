@@ -299,7 +299,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
 
     ## update archive
     if( !is.null(archive_update) && (i %% archive_update == 0) )
-      z <- rbind(xt, z)
+      z <- rbind(z, xt)
 
     ## store for output (respect burn-in period and possible output thinning)
     if( (i > (burnin*t)) && (i %% thin == 0) ) {

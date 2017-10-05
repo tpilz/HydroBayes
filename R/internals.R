@@ -16,9 +16,9 @@ calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape, lik_fun) {
     out <- get(lik_fun)(res, obs)
   } else stop("Argument 'lik' has to be one of {1,2,21,22}!")
   # avoid non-finite values, set to very small value
-  out <- max(out, -100)
+  out <- max(out, -700)
   # check output
-  if(any(!is.finite(out))) stop("Calculated log-likelihood is non-finite values!")
+  if(any(!is.finite(out))) stop("Calculated log-likelihood is not finite!")
   return(out)
 }
 
@@ -60,7 +60,7 @@ prior_pdf <- function(x, par.info, lik) {
     }
   }
   # avoid non-finite values, set to very small value
-  lp <- max(lp, -100)
+  lp <- max(lp, -700)
   # check output
   if(!is.finite(lp)) stop(paste0("Calculated log-prior is not finite: ", lp, "; x = ", x))
   return(lp)
