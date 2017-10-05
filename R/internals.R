@@ -90,8 +90,20 @@ bound_par <- function(par, min, max, handle) {
     if(par < min || par > max) {
       if(handle == "bound") {
         par_out <- max(min(par, max), min)
+      } else if(handle == "reflect") {
+        par_out <- par
+        while(par_out < min || par_out > max) {
+          if(par_out < min) par_out <- min + abs(diff(c(par_out, min)))
+          if(par_out > max) par_out <- max - abs(diff(c(par_out, max)))
+        }
+      } else if(handle == "fold") {
+        par_out <- par
+        while(par_out < min || par_out > max) {
+          if(par_out < min) par_out <- max - abs(diff(c(par_out, min)))
+          if(par_out > max) par_out <- min + abs(diff(c(par_out, max)))
+        }
       } else {
-        stop("Value 'bound' of argument list 'par.info' must be one of {'bound'}!")
+        stop("Value 'bound' of argument list 'par.info' must be one of {'bound', 'reflect', 'fold'}!")
       }
     }
   }

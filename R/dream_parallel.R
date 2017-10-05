@@ -20,7 +20,11 @@
 #' \code{initial} is 'normal'.
 #' @param val_ini \code{numeric} nc-by-d-dimensional matrix of prior values if \code{initial} is 'user'.
 #' @param bound \code{character}. What to do if the proposal parameter is outside the defined min-max limits.
-#' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit.
+#' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit. reflect -
+#' parameter value is reflected at the boundary towards the feasible space by the amount of boundary violation.
+#' fold - upper bound of each parameter dimension is connect the its respective lower bound (NOTE: this ensures
+#' detailed balance of the MCMC simulation but may lead to inflation of acceptance rates of prposals). NULL
+#' (default): nothing is done and proposals outside the feasible parameter range will be evaluated as well.
 #' @param names \code{character} vector of length d with names for the parameters. These can be used within \code{fun}
 #' (in this case, parameter input x of \code{fun} is a named vector) and will appear in the output list element 'chain'.
 #' @param prior \code{character} specifying the prior pdf. One of: 'uniform' (prior is assumed to be uniformly distributed between
