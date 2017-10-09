@@ -45,6 +45,7 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
+#' @param outlier_check \code{logical}. Shall outlier chains be identified and removed? Default: \code{TRUE}.
 #' @param obs \code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
 #' realisations of \code{lik} (see details).
 #' @param abc_rho \code{character}. Name of an ABC distance function(sim, obs) calculating the distance between
@@ -129,7 +130,8 @@ dream <- function(fun, ..., lik = NULL,
                                   bound = NULL, names = NULL, prior = "uniform"),
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
-                  p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
+                  p_g = 0.2, beta0 = 1, thin = 1, outlier_check = TRUE, obs = NULL,
+                  abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
                   checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
@@ -229,7 +231,7 @@ dream <- function(fun, ..., lik = NULL,
       lpost_xp <- lp_xp + ll_xp
 
       # Metropolis acceptance
-      accept <- metropolis_acceptance(lpost_xp, lpost[i-1,j], lik)
+      accept <- metropolis_acceptance(lpost_xp, lpost[i-1,j], lik, mt=1)
 
       if(accept) { # proposal is accepted
         dx <- xp - xt[j,]
@@ -282,11 +284,13 @@ dream <- function(fun, ..., lik = NULL,
           pCR <- pCR/sum(pCR)
         }
 
-        # check for outliers and correct them
-        check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
-        xt <- check_out$xt
-        lpost[i,] <- check_out$p_x
-        outl[[i]] <- check_out$outliers
+        # # check for outliers and correct them
+        if(outlier_check) {
+          check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
+          xt <- check_out$xt
+          lpost[i,] <- check_out$p_x
+          outl[[i]] <- check_out$outliers
+        }
       } # update interval
     } # adaptation period
 

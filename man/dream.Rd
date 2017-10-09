@@ -8,9 +8,9 @@ dream(fun, ..., lik = NULL, par.info = list(initial = NULL, min = NULL, max
   = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL, names = NULL,
   prior = "uniform"), nc, t, d, burnin = 0, adapt = 0.1,
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
-  nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
-  abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-  checkConvergence = FALSE, verbose = TRUE)
+  nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, outlier_check = TRUE,
+  obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL,
+  lik_fun = NULL, checkConvergence = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{fun}{\code{character}. Name of a function(x, ...) which is evaluated at x being a
@@ -53,6 +53,8 @@ the replacement of outlier chains. Default: 0.1.}
 \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).}
 
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
+
+\item{outlier_check}{\code{logical}. Shall outlier chains be identified and removed? Default: \code{TRUE}.}
 
 \item{obs}{\code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
 realisations of \code{lik} (see details).}
