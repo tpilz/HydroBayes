@@ -16,7 +16,7 @@ calc_ll <- function(res, lik, obs, abc_rho, abc_e, glue_shape, lik_fun) {
     out <- get(lik_fun)(res, obs)
   } else stop("Argument 'lik' has to be one of {1,2,21,22}!")
   # avoid non-finite values, set to very small value
-  out <- max(out, -700)
+  out <- max(out, log(.Machine$double.xmin))
   # check output
   if(any(!is.finite(out))) stop("Calculated log-likelihood is not finite!")
   return(out)
@@ -60,7 +60,7 @@ prior_pdf <- function(x, par.info, lik) {
     }
   }
   # avoid non-finite values, set to very small value
-  lp <- max(lp, -700)
+  lp <- max(lp, log(.Machine$double.xmin))
   # check output
   if(!is.finite(lp)) stop(paste0("Calculated log-prior is not finite: ", lp, "; x = ", x))
   return(lp)
@@ -214,19 +214,31 @@ calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta
   return(list(xp=xp, id=id))
 }
 
-metropolis_acceptance <- function(p_xp, p_x, lik) {
+metropolis_acceptance <- function(p_xp, p_x, lik, mt, p_zp) {
   if(lik == 22) {
     # modified metropolis acceptance probability for ABC method, see Sadegh and Vrugt, 2014
     p_acc <- max(ifelse(p_xp >= p_x, 1, 0), ifelse(p_xp >= 0, 1, 0))
     accept <- p_acc == 1
 
+  } else if(mt>1) {
+    # Modified Metropolis acceptance probability, Laloy and Vrugt, 2012
+    p1 <- sum(exp(p_xp))
+    p2 <- sum(exp(p_zp))
+    if(p2 == 0) {
+      accept <- FALSE
+    } else {
+    p_acc <- min(1, p1 / p2)
+    accept <- p_acc > runif(1)
+    }
   } else {
     # Metropolis acceptance probability
     p_acc <- min(max(-100, p_xp - p_x), 0)
     # accept or reject
     accept <- p_acc > log(runif(1))
   }
-  if(!is.finite(accept)) stop(paste0("Calculate Metropolis acceptance is not finite: ", accept, "; p_xp = ", p_xp, ", p_x = ", p_x))
+  if(!is.finite(accept)) stop(paste0("Calculate Metropolis acceptance is not finite: ", paste(accept, collapse = ", "),
+                                     ";p_xp = ", paste(p_xp, collapse=", "),
+                                     ", p_x = ", paste(p_x, collapse=", ")))
   return(accept)
 }
 

@@ -50,6 +50,8 @@
 #' @param beta0 \code{numeric}. Reduce jump distance, e.g. if the average acceptance rate is low (less than 15 \%).
 #' \code{0 < beta0 <= 1}. Default: 1 (i.e. jump distance is not adjusted).
 #' @param thin \code{integer}. Thinning to be applied to output in case of large \code{t}. See below.
+#' @param outlier_check \code{logical}. Shall outlier chains be identified and removed (only if
+#' \code{past_sample == FALSE})? Default: \code{TRUE}.
 #' @param obs \code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
 #' realisations of \code{lik} (see details).
 #' @param abc_rho \code{character}. Name of an ABC distance function(sim, obs) calculating the distance between
@@ -72,6 +74,8 @@
 #' direction) jump. Might be useful for complex target distributions to enhance the diversity of proposals.
 #' In such a case, a recommended value is 0.1. Otherwise, leave it at zero to prevent snooker updates (the default).
 #' NOTE: Can only be applied if \code{past_sample == TRUE}!
+#' @param mt \code{integer} specifying the number of sampling trials. A value greater one results in MT-DREAM.
+#' Default: 1.
 #' @param ncores \code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 #' (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very
 #' complex and computational demanding, otherwise multiple thread handling will cause function slowdown! Default: 1.
@@ -138,6 +142,11 @@
 #' Sadegh, M. and J. A. Vrugt: "Approximate Bayesian computation using Markov Chain Monte Carlo simulation:
 #' DREAM_ABC". Water Resources Research, 2014, 50, 6767 -- 6787, \url{http://dx.doi.org/10.1002/2014WR015386}.
 #'
+#' For MT-DREAM(ZS) see:
+#'
+#' Laloy, E. and J. A. Vrugt: "High-dimensional posterior exploration of hydrologic models using multiple-try
+#' DREAM(ZS) and high-performance computing". Water Resources Research, 2012, 48, W01526, \url{http://dx.doi.org/10.1029/2011WR010608}.
+#'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
 #' @import MASS
@@ -150,8 +159,10 @@ dream_parallel <- function(fun, ..., lik = NULL,
                                   bound = NULL, names = NULL, prior = "uniform"),
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
-                  p_g = 0.2, beta0 = 1, thin = 1, obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-                  past_sample = FALSE, m0 = NULL, archive_update = NULL, psnooker=0, ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
+                  p_g = 0.2, beta0 = 1, thin = 1, outlier_check = TRUE, obs = NULL, abc_rho = NULL, abc_e = NULL,
+                  glue_shape = NULL, lik_fun = NULL,
+                  past_sample = FALSE, m0 = NULL, archive_update = NULL, psnooker=0, mt = 1,
+                  ncores = 1, checkConvergence = FALSE, verbose = TRUE) {
 
   ### Argument checks ###
   if(!past_sample && (nc <= delta*2) )
@@ -250,19 +261,19 @@ dream_parallel <- function(fun, ..., lik = NULL,
     dx <- array(0, dim=c(nc, d))
 
     # calculate proposals
-    res_t <- lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker))
+    res_t <- replicate(mt, lapply(1:nc, function(j) calc_prop(j, xt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker)))
     xp <- sapply(res_t, function(x) x$xp)
     if(!is.matrix(xp)) xp <- t(xp)
-    xp <- t(xp) # nc-by-d as xt
+    xp <- t(xp) # (nc*mt)-by-d as xt
     id <- sapply(res_t, function(x) x$id)
     # calculate prior log-density
     lp_xp <- apply(xp, 1, prior_pdf, par.info, lik)
 
     # evaluate fun for proposals
     if(ncores > 1) {
-      res_fun_t <- mclapply(1:nc, function(j) get(fun)(xp[j,], ...), mc.cores = 8)
+      res_fun_t <- mclapply(1:(nc*mt), function(j) get(fun)(xp[j,], ...), mc.cores = 8)
       #res_fun_t <- mclapply(1:nc, function(j) get(fun)(xp[j,], init_dir, period, flood_thresh), mc.cores = 8)
-      res_fun_t <- matrix(unlist(res_fun_t), nrow=nc, byrow = T) # nc-by-[length of fun output]
+      res_fun_t <- matrix(unlist(res_fun_t), nrow=nc*mt, byrow = T) # nc*mt-by-[length of fun output]
     } else {
       res_fun_t <- apply(xp, 1, get(fun), ...)
       #res_fun_t <- apply(xp[1:3,], 1, get(fun), init_dir, period, flood_thresh)
@@ -274,18 +285,77 @@ dream_parallel <- function(fun, ..., lik = NULL,
     # calculate posterior log-density
     lpost_xp <- lp_xp + ll_xp
 
+
+    ## Multi-try
+    if(mt > 1) {
+      # select candidate point among mt proposals for each chain
+      samp_ind <- tapply(lpost_xp, rep(1:nc, mt), function(x) {
+        lps <- exp(x)
+        p_sum <- sum(lps)
+        if(p_sum == 0) {
+          p <- rep(1/mt, mt)
+        } else {
+          p <- lps / p_sum
+        }
+        sample(1:mt, 1, prob=p)
+      })
+      samp_ind <- (samp_ind-1)*nc+1:nc
+      zt <- xp[samp_ind,, drop=F]
+      ll_zt <- ll_xp[samp_ind]
+      lp_zt <- lp_xp[samp_ind]
+      lpost_zt <- lpost_xp[samp_ind]
+      zt_resfun <- res_fun_t[samp_ind,, drop=F]
+      id <- id[samp_ind]
+      # calculate mt-1 new proposals
+      res_t <- replicate(mt-1, lapply(1:nc, function(j) calc_prop(j, zt, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta0, par.info, past_sample, z, psnooker)))
+      zp <- sapply(res_t, function(x) x$xp)
+      if(!is.matrix(zp)) zp <- t(zp)
+      zp <- t(zp) # (nc*mt)-by-d as xt
+      # calculate prior log-density
+      lp_zp <- apply(zp, 1, prior_pdf, par.info, lik)
+      # evaluate fun for proposals
+      if(ncores > 1) {
+        res_fun_t <- mclapply(1:(nc*(mt-1)), function(j) get(fun)(zp[j,], ...), mc.cores = 8)
+        res_fun_t <- matrix(unlist(res_fun_t), nrow=nc*(mt-1), byrow = T) # nc*(mt-1)-by-[length of fun output]
+      } else {
+        res_fun_t <- apply(zp, 1, get(fun), ...)
+        if(!is.matrix(res_fun_t)) res_fun_t <- t(res_fun_t)
+        res_fun_t <- t(res_fun_t) # nc-by-[length of fun output]
+      }
+      # calculate log-likelihood
+      ll_zp <- apply(res_fun_t, 1, calc_ll, lik, obs, abc_rho, abc_e, glue_shape, lik_fun)
+      # calculate posterior log-density
+      lpost_zp <- lp_zp + ll_zp
+      # mt-th value equal to xt and pdf(xt)
+      lpost_zp <- c(lpost_zp, lpost[i-1,])
+    } #  end multi-try
+
+
     # Metropolis acceptance
-    accept <- sapply(1:nc, function(j) metropolis_acceptance(lpost_xp[j], lpost[i-1,j], lik))
+    if(mt > 1) {
+      accept <- tapply(1:(nc*mt), rep(1:nc, mt), function(j) metropolis_acceptance(lpost_xp[j], NULL, lik, mt, lpost_zp[j]))
+    } else {
+      accept <- sapply(1:nc, function(j) metropolis_acceptance(lpost_xp[j], lpost[i-1,j], lik, mt=1))
+    }
     if(!is.vector(accept) && length(accept) != nc)
       stop("Metropolis acceptance was not calculated as expected.")
     # update auxiliary variables
     if(any(accept)) {
-      dx[accept,] <- xp[accept,] - xt[accept,] # jumped distance
-      xt[accept,] <- xp[accept,] # accept candidate parameters
-      lp[accept] <- lp_xp[accept] # prior density
-      ll[accept] <- ll_xp[accept] # likelihood
-      lpost[i,accept] <- lpost_xp[accept] # accept density accordingly
-      res_fun[accept,] <- res_fun_t[accept,] # raw function output
+      if(mt > 1) {
+        dx[accept,] <- zt[accept,] - xt[accept,] # jumped distance
+        xt[accept,] <- zt[accept,] # accept candidate parameters
+        lp[accept] <- lp_zt[accept] # prior density
+        ll[accept] <- ll_zt[accept] # likelihood
+        lpost[i,accept] <- lpost_zt[accept] # accept density accordingly
+        res_fun[accept,] <- zt_resfun[accept,] # raw function output
+      } else {
+        dx[accept,] <- xp[accept,] - xt[accept,] # jumped distance
+        xt[accept,] <- xp[accept,] # accept candidate parameters
+        lp[accept] <- lp_xp[accept] # prior density
+        ll[accept] <- ll_xp[accept] # likelihood
+        lpost[i,accept] <- lpost_xp[accept] # accept density accordingly
+        res_fun[accept,] <- res_fun_t[accept,] # raw function output
+      }
     }
     if(any(!accept))
       lpost[i,!accept] <- lpost[i-1,!accept] # keep former lpost value for rejected chains
@@ -338,7 +408,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
         }
 
         # check for outliers and correct them (not if DREAM_zs, i.e. archive sampling is activated)
-        if(!past_sample) {
+        if(!past_sample && outlier_check) {
           check_out <- check_outlier(lpost[ceiling(i/2):i, ], xt, nc)
           xt <- check_out$xt
           lpost[i,] <- check_out$p_x

@@ -8,10 +8,11 @@ dream_parallel(fun, ..., lik = NULL, par.info = list(initial = NULL, min =
   NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL, bound = NULL, names =
   NULL, prior = "uniform"), nc, t, d, burnin = 0, adapt = 0.1,
   updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12,
-  nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, obs = NULL,
-  abc_rho = NULL, abc_e = NULL, glue_shape = NULL, lik_fun = NULL,
-  past_sample = FALSE, m0 = NULL, archive_update = NULL, psnooker = 0,
-  ncores = 1, checkConvergence = FALSE, verbose = TRUE)
+  nCR = 3, p_g = 0.2, beta0 = 1, thin = 1, outlier_check = TRUE,
+  obs = NULL, abc_rho = NULL, abc_e = NULL, glue_shape = NULL,
+  lik_fun = NULL, past_sample = FALSE, m0 = NULL, archive_update = NULL,
+  psnooker = 0, mt = 1, ncores = 1, checkConvergence = FALSE,
+  verbose = TRUE)
 }
 \arguments{
 \item{fun}{\code{character}. Name of a function(x, ...) which is evaluated at x being a
@@ -56,6 +57,9 @@ the replacement of outlier chains (NB: this can enhance convergence to the targe
 
 \item{thin}{\code{integer}. Thinning to be applied to output in case of large \code{t}. See below.}
 
+\item{outlier_check}{\code{logical}. Shall outlier chains be identified and removed (only if
+\code{past_sample == FALSE})? Default: \code{TRUE}.}
+
 \item{obs}{\code{numeric} vector of observations to be compared with output of \code{fun}. Only needed for some
 realisations of \code{lik} (see details).}
 
@@ -86,6 +90,9 @@ at every [\code{archive_update}]th iteration. Default: \code{NULL} (if \code{pas
 direction) jump. Might be useful for complex target distributions to enhance the diversity of proposals.
 In such a case, a recommended value is 0.1. Otherwise, leave it at zero to prevent snooker updates (the default).
 NOTE: Can only be applied if \code{past_sample == TRUE}!}
+
+\item{mt}{\code{integer} specifying the number of sampling trials. A value greater one results in MT-DREAM.
+Default: 1.}
 
 \item{ncores}{\code{integer} specifying the number of CPU cores to be used. If > 1, packages \code{\link[doMC]{doMC}}
 (Linux only!) and \code{\link[parallel]{parallel}} are needed. Values > 1 only useful if \code{fun} is very
@@ -193,6 +200,11 @@ For ABC method see:
 
 Sadegh, M. and J. A. Vrugt: "Approximate Bayesian computation using Markov Chain Monte Carlo simulation:
 DREAM_ABC". Water Resources Research, 2014, 50, 6767 -- 6787, \url{http://dx.doi.org/10.1002/2014WR015386}.
+
+For MT-DREAM(ZS) see:
+
+Laloy, E. and J. A. Vrugt: "High-dimensional posterior exploration of hydrologic models using multiple-try
+DREAM(ZS) and high-performance computing". Water Resources Research, 2012, 48, W01526, \url{http://dx.doi.org/10.1029/2011WR010608}.
 }
 \author{
 Tobias Pilz \email{tpilz@uni-potsdam.de}
