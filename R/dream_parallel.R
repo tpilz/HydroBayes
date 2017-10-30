@@ -175,6 +175,8 @@ dream_parallel <- function(fun, ..., lik = NULL,
     m0 <- nc
   if(past_sample & is.null(archive_update))
     archive_update <- 10
+  if((mt>1 | psnooker>0) & (lik==21 | lik==22))
+    stop("ABC method cannot be combined with MT-DREAM or snooker updating, see Sadegh and Vrugt (2014), WRR!")
   if(ncores > 1)
     registerDoMC(ncores)
 
