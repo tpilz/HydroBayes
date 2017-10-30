@@ -1,8 +1,8 @@
 Package: HydroBayes
 Type: Package
 Title: Bayesian statistics for use in hydrological applications
-Version: 0.0.1
-Date: 2017-09-07
+Version: 0.0.2
+Date: 2017-10-30
 Authors@R: person("Tobias", "Pilz", email="tpilz@uni-potsdam.de", role=c("aut", "cre", "cph"))
 Description: Collection of functions to apply Bayesian statistics in hydrological applications.
 	For internal use only!
