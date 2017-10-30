@@ -8,7 +8,8 @@
 #' depending on argument \code{lik}.
 #' @param ... Additional arguments for \code{fun}.
 #' @param lik \code{integer}. Flag specifying a likelihood function to be used, see details.
-#' @param par.info A \code{list} of parameter information.
+#' @param par.info A \code{list} of parameter information (see arguments \code{initial}, \code{min}, \code{max},
+#' \code{mu}, \code{cov}, \code{val_ini}, \code{bound}, \code{names}, and \code{prior} below).
 #' @param initial \code{character}. Method for prior sampling. One of: uniform - sampling from a uniform distribution;
 #' normal - a (multivariate) normal distribution; latin - latin hypercube sampling; user - value(s) given by the user.
 #' @param min \code{numeric}. A d-dimensional vector of minimum values for each parameter to sample from if
@@ -22,15 +23,16 @@
 #' @param bound \code{character}. What to do if the proposal parameter is outside the defined min-max limits.
 #' One of: bound - proposal is set to min/max value if it is smaller/larger than the defined limit. reflect -
 #' parameter value is reflected at the boundary towards the feasible space by the amount of boundary violation.
-#' fold - upper bound of each parameter dimension is connect the its respective lower bound (NOTE: this ensures
+#' fold - upper bound of each parameter dimension is connected to its respective lower bound (NOTE: this ensures
 #' detailed balance of the MCMC simulation but may lead to inflation of acceptance rates of prposals). NULL
 #' (default): nothing is done and proposals outside the feasible parameter range will be evaluated as well.
 #' @param names \code{character} vector of length d with names for the parameters. These can be used within \code{fun}
 #' (in this case, parameter input x of \code{fun} is a named vector) and will appear in the output list element 'chain'.
-#' @param prior \code{character} specifying the prior pdf. One of: 'uniform' (prior is assumed to be uniformly distributed between
-#' \code{min} and \code{max}, i.e. non-informative); 'normal' (prior assumed to be normally distributed with \code{mu}
-#' and \code{cov}); name of a user-defined function(x) with x being a d-dimensional parameter vector and returning
-#' the log-density of the d-variate prior distribution at x.
+#' @param prior \code{character} specifying the prior pdf, i.e. posterior ~ prior x likelihood. One of: 'flat'
+#' (non-informative prior, log-pdf set to zero and posterior ~ likelihood; DEFAULT); 'uniform' (prior is assumed to be uniformly distributed between \code{min} and \code{max};
+#' multiplicative prior, parameters must not be correlated!); 'normal' (prior assumed to be normally distributed with
+#' \code{mu} and \code{cov}, i.e. parameters may be correlated); name of a user-defined function(x) with x being a
+#' d-dimensional parameter vector and returning the log-density of the d-variate prior distribution at x.
 #' @param nc \code{numeric}. Number of chains evolved in parallel.
 #' @param t \code{numeric}. Number of samples from the Markov chain.
 #' @param d \code{numeric}. Number of parameters.
@@ -156,7 +158,7 @@
 #' @export
 dream_parallel <- function(fun, ..., lik = NULL,
                   par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL,
-                                  bound = NULL, names = NULL, prior = "uniform"),
+                                  bound = NULL, names = NULL, prior = "flat"),
                   nc, t, d,
                   burnin = 0, adapt = 0.1, updateInterval = 10, delta = 3, c_val = 0.1, c_star = 1e-12, nCR = 3,
                   p_g = 0.2, beta0 = 1, thin = 1, outlier_check = TRUE, obs = NULL, abc_rho = NULL, abc_e = NULL,

@@ -51,10 +51,12 @@ prior_pdf <- function(x, par.info, lik) {
     lp <- 0 # set to zero if ABC method is used, TODO: not sure how to handle this?!
   } else {
     # calculate prior log-density
-    if(par.info$prior == "uniform") {
+    if(par.info$prior == "flat") { # non-informative prior, i.e. posterior ~ likelihood
+      lp <- 0
+    } else if(par.info$prior == "uniform") { # multiplicative prior, i.e. parameters must not be correlated!
       lp <- sum(dunif(x, min = par.info$min, max = par.info$max, log = T))
-    } else if(par.info$prior == "normal") {
-      lp <- sum(dmvnorm(x, mean = par.info$mu, sigma = par.info$cov, log = T))
+    } else if(par.info$prior == "normal") { # correlation among parameters respected via sigma
+      lp <- dmvnorm(x, mean = par.info$mu, sigma = par.info$cov, log = T)
     } else {
       lp <- get(par.info$prior)(x)
     }
