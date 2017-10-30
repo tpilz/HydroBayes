@@ -271,7 +271,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
 
     # evaluate fun for proposals
     if(ncores > 1) {
-      res_fun_t <- mclapply(1:(nc*mt), function(j) get(fun)(xp[j,], ...), mc.cores = 8)
+      res_fun_t <- mclapply(1:(nc*mt), function(j) get(fun)(xp[j,], ...), mc.cores = ncores)
       #res_fun_t <- mclapply(1:nc, function(j) get(fun)(xp[j,], init_dir, period, flood_thresh), mc.cores = 8)
       res_fun_t <- matrix(unlist(res_fun_t), nrow=nc*mt, byrow = T) # nc*mt-by-[length of fun output]
     } else {
@@ -315,7 +315,7 @@ dream_parallel <- function(fun, ..., lik = NULL,
       lp_zp <- apply(zp, 1, prior_pdf, par.info, lik)
       # evaluate fun for proposals
       if(ncores > 1) {
-        res_fun_t <- mclapply(1:(nc*(mt-1)), function(j) get(fun)(zp[j,], ...), mc.cores = 8)
+        res_fun_t <- mclapply(1:(nc*(mt-1)), function(j) get(fun)(zp[j,], ...), mc.cores = ncores)
         res_fun_t <- matrix(unlist(res_fun_t), nrow=nc*(mt-1), byrow = T) # nc*(mt-1)-by-[length of fun output]
       } else {
         res_fun_t <- apply(zp, 1, get(fun), ...)
