@@ -149,11 +149,11 @@ corresponds with parameter realisations in chain;
 
 \emph{outlier}: a list with adapt*t vectors of outlier indices in nc (value of 0 means no outliers);
 
-\emph{AR}: a (1-burnin)*t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
-(first element is NA due to computational reasons);
+\emph{AR}: a [\code{floor(t/updateInterval)+1}]-by-2 matrix giving the total number of proposal evaluations an the
+associated acceptance rate averaged over the last \code{updateInterval * nc} evaluations.
 
-\emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
-(first element is NA due to computational reasons).
+\emph{CR}: a [\code{floor(t/updateInterval)+1}]-by-[nCR+1] matrix giving the total number of proposal evaluations
+(first column) an the current selection probability for each of the \code{nCR} crossover values.
 
 IF checkConvergence == TRUE:
 

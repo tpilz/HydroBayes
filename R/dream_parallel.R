@@ -97,11 +97,11 @@
 #'
 #' \emph{outlier}: a list with adapt*t vectors of outlier indices in nc (value of 0 means no outliers);
 #'
-#' \emph{AR}: a (1-burnin)*t/thin-by-nCR matrix giving the acceptance rate for each sample number and crossover value
-#' (first element is NA due to computational reasons);
+#' \emph{AR}: a [\code{floor(t/updateInterval)+1}]-by-2 matrix giving the total number of proposal evaluations an the
+#' associated acceptance rate averaged over the last \code{updateInterval * nc} evaluations.
 #'
-#' \emph{CR}: a (1-burnin)*t/thin-by-nCR matrix giving the selection probability for each sample number and crossover value
-#' (first element is NA due to computational reasons).
+#' \emph{CR}: a [\code{floor(t/updateInterval)+1}]-by-[nCR+1] matrix giving the total number of proposal evaluations
+#' (first column) an the current selection probability for each of the \code{nCR} crossover values.
 #'
 #' IF checkConvergence == TRUE:
 #'
@@ -184,7 +184,9 @@ dream_parallel <- function(fun, ..., lik = NULL,
   timea <- Sys.time()
 
   # Variables for crossover probability selection and acceptance monitoring
-  J <- n_id <- n_acc <- rep(0, nCR)
+  J <- n_id <- rep(0, nCR)
+  n_acc <- 0
+  n_eval <- 0
 
   # vector of sampled crossover indices
   id <- rep(NA, nc)
@@ -203,7 +205,8 @@ dream_parallel <- function(fun, ..., lik = NULL,
   chain <- array(NA, dim = c(out_t, d + 3, nc))
   parnames <- if(is.null(par.info$names)) paste0("par", 1:d) else par.info$names
   dimnames(chain) <- list(NULL, c(parnames, "lp", "ll", "lpost"), NULL)
-  out_AR <- out_CR <- array(NA, dim = c(out_t, nCR))
+  out_CR <- array(NA, dim = c(floor(t/updateInterval)+1, nCR+1))
+  out_AR <- array(NA, dim = c(floor(t/updateInterval)+1, 2), dimnames = list(NULL, c("n_eval", "accepted")))
   if(checkConvergence)
     out_rstat <- array(NA, dim = c(out_t-50, d))
   outl <- list(NULL)
@@ -243,10 +246,12 @@ dream_parallel <- function(fun, ..., lik = NULL,
   chain[1,"lp",] <- lp
   chain[1,"ll",] <- ll
   chain[1,"lpost",] <- lpost[1,]
-  out_AR[1,] <- rep(0,3)
-  out_CR[1,] <- pCR
+  out_AR[1,1] <- out_CR[1,1] <- nc
+  out_AR[1,2] <- NA
+  out_CR[1,-1] <- pCR
   fx[1,,] <- res_fun
   ind_out <- 1
+  i_ar <- 1
 
   # progress indicator
   if(verbose)
@@ -366,10 +371,12 @@ dream_parallel <- function(fun, ..., lik = NULL,
 
     ids <- table(id) # count occurences of specific ids
     n_id[as.numeric(names(ids))] <- n_id[as.numeric(names(ids))] + ids # no. of times id was used
-    if(any(accept)) {
-      id_acc <- table(id[accept]) # count occurences of specific accepted ids
-      n_acc[as.numeric(names(id_acc))] <- n_acc[as.numeric(names(id_acc))] + id_acc # count acceptances per nCR
-    }
+    # if(any(accept)) {
+    #   id_acc <- table(id[accept]) # count occurences of specific accepted ids
+    #   n_acc[as.numeric(names(id_acc))] <- n_acc[as.numeric(names(id_acc))] + id_acc # count acceptances per nCR
+    # }
+    n_acc <- n_acc + length(which(accept))
+    n_eval <- n_eval + length(accept)
     std_x <- apply(xt, 2, sd) # sd among chains
     jump_dist <- apply(dx, 1, function(x) sum( (x/std_x)^2 )) # Euclidean jump distances
     for(j in 1:nc) J[id[j]] <-  J[id[j]] + jump_dist[j]  # monitoring of jump distances
@@ -389,10 +396,6 @@ dream_parallel <- function(fun, ..., lik = NULL,
 
       # function output
       fx[ind_out,,] <- res_fun
-
-      # AR and CR
-      out_AR[ind_out,] <- n_acc/n_id
-      out_CR[ind_out,] <- pCR
 
       # convergence diagnostic (needs as least 50 observations)
       if(checkConvergence == T && ind_out > 50)
@@ -420,6 +423,18 @@ dream_parallel <- function(fun, ..., lik = NULL,
         }
       } # update interval
     } # adaptation period
+
+
+    ## AR and CR
+    if (i %% updateInterval == 0) {
+      i_ar <- i_ar+1
+      # AR and CR
+      out_AR[i_ar,2] <- n_acc / n_eval
+      out_AR[i_ar,1] <- out_CR[i_ar,1] <- out_CR[i_ar-1,1] + n_eval
+      n_acc <- 0
+      n_eval <- 0
+      out_CR[i_ar,-1] <- pCR
+    }
 
   } #  end chain processing
 
