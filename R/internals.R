@@ -207,9 +207,11 @@ calc_prop <- function(j, x, d, nc, delta, CR, nCR, pCR, c_val, c_star, p_g, beta
 
   # check and adjust proposal
   if(any(!is.finite(xp))) stop(paste0("Calculated proposal is not finite!", ifelse(snooker, " Snooker update was applied.", "")))
-  xp <- sapply(1:d, function(k) bound_par(xp[k], min = ifelse(length(par.info$min) > 1, par.info$min[k], par.info$min),
-                                                 max = ifelse(length(par.info$max) > 1, par.info$max[k], par.info$max),
-                                                 handle = par.info$bound))
+  if(!is.null(par.info$min) && !is.null(par.info$max)) {
+    xp <- sapply(1:d, function(k) bound_par(xp[k], min = ifelse(length(par.info$min) > 1, par.info$min[k], par.info$min),
+                                                   max = ifelse(length(par.info$max) > 1, par.info$max[k], par.info$max),
+                                                   handle = par.info$bound))
+  }
   # make sure parameter names are retained
   if(!is.null(par.info$names)) names(xp) <- par.info$names
 
