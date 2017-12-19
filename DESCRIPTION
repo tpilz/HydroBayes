@@ -6,6 +6,11 @@ Date: 2017-10-30
 Authors@R: person("Tobias", "Pilz", email="tpilz@uni-potsdam.de", role=c("aut", "cre", "cph"))
 Description: Collection of functions to apply Bayesian statistics in hydrological applications.
 	For internal use only!
+Depends:
+	MASS,
+	lhs,
+	doMC,
+	EMCluster
 License: GPL-3
 URL: https://github.com/tpilz/HydroBayes
 BugReports: https://github.com/tpilz/HydroBayes/issues

@@ -75,10 +75,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import doMC
-#' @import MASS
-#' @import parallel
-#' @import EMCluster
 #' @export
 game <- function(theta, theta_post, m_sub = NULL, m0 = NULL, m1, Jmax=5, ic, omega, ob = FALSE, R = NULL,
                  par.info = NULL, lik = NULL, fun = NULL, ..., obs = NULL, abc_rho = NULL,

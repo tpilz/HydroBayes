@@ -19,7 +19,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import MASS
 #' @export
 de_mc <- function(prior, pdf, nc, t, d) {
 

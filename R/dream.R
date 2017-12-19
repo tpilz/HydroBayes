@@ -122,8 +122,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import MASS
-#' @import lhs
 #' @export
 dream <- function(fun, ..., lik = NULL,
                   par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL,

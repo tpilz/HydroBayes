@@ -18,7 +18,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import MASS
 #' @export
 am <- function(prior, pdf, t, d) {
 

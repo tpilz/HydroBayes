@@ -151,10 +151,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import MASS
-#' @import doMC
-#' @import parallel
-#' @import lhs
 #' @export
 dream_parallel <- function(fun, ..., lik = NULL,
                   par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL,

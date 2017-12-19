@@ -102,9 +102,6 @@
 #'
 #' @author Tobias Pilz \email{tpilz@@uni-potsdam.de}
 #'
-#' @import MASS
-#' @import doMC
-#' @import lhs
 #' @export
 dream_old <- function(fun, ...,
                   par.info = list(initial = NULL, min = NULL, max = NULL, mu = NULL, cov = NULL, val_ini = NULL,
