@@ -111,6 +111,12 @@ game <- function(theta, theta_post, m_sub = NULL, m0 = NULL, m1, Jmax=5, ic, ome
 
   # select optimal mixture distribution
   ic_vals <- sapply(pmix_j, function(x) x$ic_val)
+  # sort out NaN and infinite values
+  r_inf <- which(is.infinite(ic_vals) | is.nan(ic_vals))
+  if(length(r_inf) == length(ic_vals))
+    stop("Could not identify a suitable Gaussian mixture distribution. Change parameters 'Jmax' and/or 'ic' and try again. However, the distribution given within 'theta' might be not describable by a Gaussian mixture distribution!")
+  ic_vals <- ic_vals[-r_inf]
+  pmix_j <- pmix_j[-r_inf]
   pmix_optim <- pmix_j[[which.min(ic_vals)]]
 
   # draw sub-samples of posterior parameter realisations
@@ -124,6 +130,8 @@ game <- function(theta, theta_post, m_sub = NULL, m0 = NULL, m1, Jmax=5, ic, ome
   theta_m1_post <- theta_post[r_samp]
   # evaluate mixture density for the sub-samples
   theta_m1_pmix <- dmixmvn(theta_m1, pmix_optim$pmix)
+  # avoid infinite values
+  theta_m1_pmix <- pmin( pmax(theta_m1_pmix, .Machine$double.xmin), .Machine$double.xmax)
 
   # sampling of the evidence
   if(omega == 0) {
@@ -135,10 +143,24 @@ game <- function(theta, theta_post, m_sub = NULL, m0 = NULL, m1, Jmax=5, ic, ome
     # draw samples from pmix (note that pmix is q0 in Volpi et al., 2017)
     sigma_full <- LTSigma2variance(pmix_optim$pmix$LTSigma) # get full covar matrix
     dist <- sample.int(pmix_optim$J, m0, replace = T, prob = pmix_optim$pmix$pi) # sampling from which of the J distributions?
-    theta_m0 <- t(sapply(dist, function(d) mvrnorm(1, pmix_optim$pmix$Mu[d,], sigma_full[,,d])))
+    theta_m0_t <- t(sapply(dist, function(d) mvrnorm(1, pmix_optim$pmix$Mu[d,], sigma_full[,,d])))
+
+    # check / bound parameters
+    if(!is.null(par.info$min) && !is.null(par.info$max)) {
+      theta_m0 <- apply(theta_m0_t, 1, function(xp) {
+        sapply(1:length(xp), function(k) bound_par(xp[k], min = ifelse(length(par.info$min) > 1, par.info$min[k], par.info$min),
+                                                max = ifelse(length(par.info$max) > 1, par.info$max[k], par.info$max),
+                                                handle = par.info$bound))
+      })
+      theta_m0 <- t(theta_m0)
+    }
+    # make sure parameter names are retained
+    if(!is.null(par.info$names)) colnames(theta_m0) <- par.info$names
 
     # evaluate mixture density for the samples
     theta_m0_pmix <- dmixmvn(theta_m0, pmix_optim$pmix)
+    # avoid infinite values
+    theta_m0_pmix <- pmin( pmax(theta_m0_pmix, .Machine$double.xmin), .Machine$double.xmax)
 
     # evaluate target density for the samples
     # calculate prior log-density

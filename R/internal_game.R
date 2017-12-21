@@ -3,6 +3,12 @@ em_pmix <- function(theta, theta_post, J, ic) {
   # apply Expectation-Maximization method to calibrate properties of the Gaussian mixture distribution
   em_res <- init.EM(theta, J) # NOTE: LTSigma counts row-wise staring at upper left of the LT matrix
 
+  # return NaN as ic_val if no stable solution could be found (results are then likely to be useless)
+  if(em_res$flag !=0 )
+    return(list(pmix = em_res,
+                ic_val = NaN,
+                J = J))
+
   # calculate information criterium to evaluate the calibration
   if(grepl("bic", ic, ignore.case = T)) {
     # calculate BIC
