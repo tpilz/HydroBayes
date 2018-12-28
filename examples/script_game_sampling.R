@@ -4,14 +4,23 @@ library(HydroBayes)
 # d-variate normal distribution, zero mean, dxd covariance matrix
 library(mvtnorm)
 #func <- function(x) dmvnorm(x, rep(0, length(x)), diag(1:length(x)) + 0.5 - diag(0.5,length(x),length(x)))
-func <- function(x) 1/3 * dmvnorm(x, rep(-5, length(x)), diag(length(x))) + 2/3 * dmvnorm(x, rep(5, length(x)), diag(length(x)))
-
+# func <- function(x) 1/3 * dmvnorm(x, rep(-5, length(x)), diag(length(x))) + 2/3 * dmvnorm(x, rep(5, length(x)), diag(length(x)))
+func <- function(x) {
+  3/6 * dmvnorm(x, rep(15, length(x)), diag(length(x))) +
+    2/6 * dmvnorm(x, rep(5, length(x)), diag(length(x))) +
+    1/6 * dmvnorm(x, rep(-5, length(x)), diag(length(x)))
+}
 # run dream to sample unnormalised posterior
-d <- 20
+# d <- 20
+# res <- dream_parallel(fun = "func", lik = 1,
+#                       par.info = list(initial = "latin", min = -10, max = 10, prior = "flat", bound = NULL),
+#                       nc=20, t = 8000, d = d, adapt = 0.5, burnin = 0.5, thin = 1, updateInterval = 10, past_sample = T,
+#                       psnooker = 0, mt=1)
+d <- 5
 res <- dream_parallel(fun = "func", lik = 1,
-                      par.info = list(initial = "latin", min = -10, max = 10, prior = "flat", bound = NULL),
-                      nc=20, t = 8000, d = d, adapt = 0.5, burnin = 0.5, thin = 1, updateInterval = 10, past_sample = T,
-                      psnooker = 0, mt=1)
+                      par.info = list(initial = "latin", min = -10, max = 20, prior = "flat", bound = NULL),
+                      nc=5, t = 10000, d = d, adapt = 0.2, burnin = 0.5, updateInterval = 100,
+                      past_sample = T, archive_update = 10, m0 = 100, psnooker = 0.1, mt=1, ncores = 1)
 
 # plot sampling result together with known target distribution
 par(mfrow=c(ceiling(4/3), 3))
@@ -30,13 +39,13 @@ library(EMCluster)
 # algorithmic parameters
 Jmax <- 5
 m1 <- 1000
-m0 <- 5000
-m_sub <- 4000
-omega <- 0
-ob <- T
+m0 <- 1000
+m_sub <- NULL
+omega <- 1
+ob <- F
 ic="bic"
 
-par.info = list(initial = "latin", min = -10, max = 10, prior = "flat", bound = NULL)
+par.info = list(initial = "latin", min = -10, max = 20, prior = "flat", bound = NULL)
 lik = 1
 fun = "func"
 obs = NULL
@@ -50,7 +59,6 @@ replicate(5, {
 res_game <- game(theta = theta, theta_post = theta_post, m_sub = m_sub, m0 = m0, m1 = m1, Jmax = Jmax, ic = ic,
                  omega = omega, ob = ob, par.info = par.info, lik = lik, fun = fun, ncores = ncores)
 res_game
-1/res_game$Z
 })
 
 
